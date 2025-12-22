@@ -15,6 +15,7 @@ import type {
   Policy,
   PolicyRestriction,
 } from "../types.js";
+import { DEFAULT_POLICY_ACTIVATION_TIME, DEFAULT_POLICY_EXPIRY_NS } from "../policy.js";
 import { waitUntil } from "./wait.js";
 
 const TGAS_TO_GAS = 1_000_000_000_000n;
@@ -24,9 +25,7 @@ const DEFAULT_SOLVER_RPC = "https://solver-relay-v2.chaindefuser.com/rpc";
 const DEFAULT_BRIDGE_RPC = "https://bridge.chaindefuser.com/rpc";
 const DEFAULT_QUOTE_DEADLINE_MS = 120000;
 const NONCE_BYTES = 32;
-export const DEFAULT_INTENTS_POLICY_EXPIRY_NS = "86400000000000";
-
-const DEFAULT_POLICY_ACTIVATION_TIME = "0";
+export const DEFAULT_INTENTS_POLICY_EXPIRY_NS = DEFAULT_POLICY_EXPIRY_NS;
 
 export const INTENTS_POLICY_METHODS = [
   "ft_deposit",

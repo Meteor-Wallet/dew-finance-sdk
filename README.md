@@ -40,7 +40,7 @@ It also includes helpers for intents-based bridging and common polling patterns.
 - NEAR intents bridging helpers
 - NEAR intents swapping helpers
 - NEAR intents policy builders (ft deposit/withdraw, ERC-20 transfer, swap signing)
-- Dew Vault (NEAR) client: propose helpers, policies, and full getter suite
+- Dew Vault (NEAR) client: propose helpers, policy builders (ChainSigTransaction), and full getter suite
 
 ## Roadmap
 

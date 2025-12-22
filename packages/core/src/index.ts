@@ -24,6 +24,8 @@ export {
   DEW_VAULT_METHODS,
   createDewVaultPolicyIdMap,
   createDewVaultPolicyList,
+  createDewVaultStrategistTransferPolicy,
+  createDewVaultStrategistTransferProcessRedeemPolicy,
 } from "./near-vault.js";
 
 export type {
@@ -38,9 +40,16 @@ export type {
   DewVaultCurrentFlow,
   DewVaultFlowWindowInfo,
   DewVaultAccountantData,
+  DewVaultStrategistTransferParams,
+  DewVaultStrategistTransferProcessRedeemParams,
   DewNearVaultClientConfig,
   DewVaultPolicyListParams,
+  DewVaultStrategistTransferPolicyParams,
+  DewVaultStrategistTransferProcessRedeemPolicyParams,
 } from "./near-vault.js";
+
+// Policy defaults
+export { DEFAULT_POLICY_ACTIVATION_TIME, DEFAULT_POLICY_EXPIRY_NS } from "./policy.js";
 
 // Shared utilities
 export * from "./utils/index.js";

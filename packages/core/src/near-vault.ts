@@ -5,6 +5,7 @@
 
 import { transactions } from "near-api-js";
 import type { DewClient } from "./client.js";
+import { DEFAULT_POLICY_ACTIVATION_TIME, DEFAULT_POLICY_EXPIRY_NS } from "./policy.js";
 import type {
   Asset,
   BasisPoints,
@@ -31,6 +32,8 @@ import type {
 const TGAS_TO_GAS = 1_000_000_000_000; // 1e12
 const DEFAULT_VAULT_CALL_GAS_TGAS = 150;
 const DEFAULT_VAULT_CALL_DEPOSIT_YOCTO = "0";
+const DEFAULT_STRATEGIST_TRANSFER_GAS_TGAS = 30;
+const DEFAULT_STRATEGIST_TRANSFER_DEPOSIT_YOCTO = "1";
 
 export const DEW_VAULT_METHODS = [
   "dew_vault_update_share_prices",
@@ -83,6 +86,52 @@ export interface DewVaultCallOptions {
   callOptions?: NearCallOptions;
 }
 
+export interface DewVaultStrategistTransferParams {
+  /** NEP-141 token contract ID */
+  tokenId: string;
+  /** Amount to transfer (U128 string) */
+  amount: U128String;
+  /** Policy ID to propose under */
+  policyId: string;
+  /** Optional memo for the transfer */
+  memo?: string;
+  /** Whether this deposit is a request (defaults to false) */
+  isRequest?: boolean;
+  /** Minimum shares expected (defaults to "0") */
+  minShares?: U128String;
+  /** Optional receiver ID for standard deposits */
+  receiverId?: string;
+  /** Gas (in TGas) for ft_transfer_call */
+  gasTgas?: number;
+  /** Deposit (in yoctoNEAR) for ft_transfer_call */
+  depositYocto?: string;
+  /** Options for the kernel proposal call */
+  callOptions?: NearCallOptions;
+}
+
+export interface DewVaultStrategistTransferProcessRedeemParams {
+  /** NEP-141 token contract ID */
+  tokenId: string;
+  /** Amount to transfer (U128 string) */
+  amount: U128String;
+  /** Redeem request IDs to process */
+  requestIds: number[];
+  /** Policy ID to propose under */
+  policyId: string;
+  /** Optional memo for the transfer */
+  memo?: string;
+  /** Whether this deposit is a request (defaults to false) */
+  isRequest?: boolean;
+  /** Minimum shares expected (defaults to "0") */
+  minShares?: U128String;
+  /** Gas (in TGas) for ft_transfer_call */
+  gasTgas?: number;
+  /** Deposit (in yoctoNEAR) for ft_transfer_call */
+  depositYocto?: string;
+  /** Options for the kernel proposal call */
+  callOptions?: NearCallOptions;
+}
+
 export interface DewNearVaultClientConfig {
   /** Bound DewClient instance */
   dewClient: DewClient;
@@ -95,16 +144,76 @@ export interface DewNearVaultClientConfig {
 }
 
 export interface DewVaultPolicyListParams {
+  /** Dew Vault contract account ID */
+  vaultId: string;
+  /** Chain signature derivation path */
+  derivationPath: string;
   requiredRole: string;
   requiredVoteCount: number;
   policyIds?: DewVaultPolicyIdMap;
   policyIdPrefix?: string;
   descriptionPrefix?: string;
-  restrictions?: PolicyRestriction[];
   chainEnvironment?: ChainEnvironment;
   activationTime?: string;
   proposalExpiryTimeNanosec?: string;
   requiredPendingActions?: string[];
+}
+
+export interface DewVaultStrategistTransferPolicyParams {
+  /** Dew Vault contract account ID */
+  vaultId: string;
+  /** NEP-141 token contract ID */
+  tokenId: string;
+  /** Chain signature derivation path */
+  derivationPath: string;
+  requiredRole: string;
+  requiredVoteCount: number;
+  policyId?: string;
+  description?: string;
+  chainEnvironment?: ChainEnvironment;
+  activationTime?: string;
+  proposalExpiryTimeNanosec?: string;
+  requiredPendingActions?: string[];
+}
+
+export type DewVaultStrategistTransferProcessRedeemPolicyParams =
+  DewVaultStrategistTransferPolicyParams;
+
+function buildRestrictionSchema(predicates: string[], indent = "  "): string {
+  const lines = predicates.map((predicate) => `${indent}${predicate}`);
+  return `and(\n${lines.join(",\n")}\n)`;
+}
+
+function buildChainSigTransactionPolicy(params: {
+  policyId: string;
+  description: string;
+  requiredRole: string;
+  requiredVoteCount: number;
+  derivationPath: string;
+  chainEnvironment: ChainEnvironment;
+  restrictions: PolicyRestriction[];
+  activationTime: string;
+  proposalExpiryTimeNanosec: string;
+  requiredPendingActions: string[];
+}): Policy {
+  return {
+    id: params.policyId,
+    description: params.description,
+    requiredRole: params.requiredRole,
+    requiredVoteCount: params.requiredVoteCount,
+    policyType: "ChainSigTransaction",
+    policyDetails: {
+      type: "ChainSigTransaction",
+      config: {
+        derivationPath: params.derivationPath,
+        chainEnvironment: params.chainEnvironment,
+        restrictions: params.restrictions,
+      },
+    },
+    activationTime: params.activationTime,
+    proposalExpiryTimeNanosec: params.proposalExpiryTimeNanosec,
+    requiredPendingActions: params.requiredPendingActions,
+  };
 }
 
 export function createDewVaultPolicyIdMap(
@@ -137,32 +246,130 @@ export function createDewVaultPolicyList(
     policyIdPrefix: params.policyIdPrefix,
   });
   const descriptionPrefix = params.descriptionPrefix ?? "Dew Vault policy for";
-  const restrictions = params.restrictions ?? [];
   const chainEnvironment = params.chainEnvironment ?? "NearWasm";
-  const activationTime = params.activationTime ?? "0";
-  const proposalExpiryTimeNanosec = params.proposalExpiryTimeNanosec ?? "0";
+  const activationTime = params.activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME;
+  const proposalExpiryTimeNanosec = params.proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS;
   const requiredPendingActions = params.requiredPendingActions ?? [];
 
   return DEW_VAULT_METHODS.map((method) => {
     const policyId = policyIds[method];
-    const policy: Policy = {
-      id: policyId,
+    const extraPredicates: string[] = [];
+    if (method === "dew_vault_confirm_pending_redeems") {
+      extraPredicates.push("$.args.requests.length().gte(1)");
+    }
+    if (method === "dew_vault_process_pending_deposits") {
+      extraPredicates.push("$.args.requests.length().gte(1)");
+    }
+    if (method === "dew_vault_reject_pending_deposits") {
+      extraPredicates.push("$.args.request_ids.length().gte(1)");
+      extraPredicates.push("$.args.reason.length().gte(1)");
+    }
+    if (method === "dew_vault_reject_pending_redeems") {
+      extraPredicates.push("$.args.request_ids.length().gte(1)");
+      extraPredicates.push("$.args.reason.length().gte(1)");
+    }
+    if (method === "dew_vault_asset_transfer") {
+      extraPredicates.push(
+        `$.args.receiver_id.equal(chain_sig_address("${params.derivationPath}","NearWasm"))`
+      );
+    }
+
+    const restrictions: PolicyRestriction[] = [
+      {
+        schema: buildRestrictionSchema([
+          `$.contract_id.equal("${params.vaultId}")`,
+          `$.function_name.equal("${method}")`,
+          ...extraPredicates,
+        ]),
+        interface: "",
+      },
+    ];
+
+    const policy = buildChainSigTransactionPolicy({
+      policyId,
       description: `${descriptionPrefix} ${method}`,
       requiredRole: params.requiredRole,
       requiredVoteCount: params.requiredVoteCount,
-      policyType: "NearNativeTransaction",
-      policyDetails: {
-        type: "NearNativeTransaction",
-        config: {
-          chainEnvironment,
-          restrictions,
-        },
-      },
+      derivationPath: params.derivationPath,
+      chainEnvironment,
+      restrictions,
       activationTime,
       proposalExpiryTimeNanosec,
       requiredPendingActions,
-    };
+    });
     return [policyId, policy];
+  });
+}
+
+export function createDewVaultStrategistTransferPolicy(
+  params: DewVaultStrategistTransferPolicyParams
+): Policy {
+  const policyId = params.policyId ?? "dew_vault_strategist_transfer";
+  const description = params.description ?? "Deposit tokens into vault";
+  const chainEnvironment = params.chainEnvironment ?? "NearWasm";
+  const activationTime = params.activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME;
+  const proposalExpiryTimeNanosec = params.proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS;
+  const requiredPendingActions = params.requiredPendingActions ?? [];
+
+  const restrictions: PolicyRestriction[] = [
+    {
+      schema: buildRestrictionSchema([
+        `$.contract_id.equal("${params.tokenId}")`,
+        `$.function_name.equal("ft_transfer_call")`,
+        `$.args.receiver_id.equal("${params.vaultId}")`,
+        `$.args.msg.json().is_strategist_transfer.equal(true)`,
+      ]),
+      interface: "",
+    },
+  ];
+
+  return buildChainSigTransactionPolicy({
+    policyId,
+    description,
+    requiredRole: params.requiredRole,
+    requiredVoteCount: params.requiredVoteCount,
+    derivationPath: params.derivationPath,
+    chainEnvironment,
+    restrictions,
+    activationTime,
+    proposalExpiryTimeNanosec,
+    requiredPendingActions,
+  });
+}
+
+export function createDewVaultStrategistTransferProcessRedeemPolicy(
+  params: DewVaultStrategistTransferProcessRedeemPolicyParams
+): Policy {
+  const policyId = params.policyId ?? "dew_vault_strategist_transfer_process_redeem";
+  const description = params.description ?? "Processes pending redeem requests";
+  const chainEnvironment = params.chainEnvironment ?? "NearWasm";
+  const activationTime = params.activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME;
+  const proposalExpiryTimeNanosec = params.proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS;
+  const requiredPendingActions = params.requiredPendingActions ?? [];
+
+  const restrictions: PolicyRestriction[] = [
+    {
+      schema: buildRestrictionSchema([
+        `$.contract_id.equal("${params.tokenId}")`,
+        `$.function_name.equal("ft_transfer_call")`,
+        `$.args.receiver_id.equal("${params.vaultId}")`,
+        `$.args.msg.json().process_redeems.length().gte(1)`,
+      ]),
+      interface: "",
+    },
+  ];
+
+  return buildChainSigTransactionPolicy({
+    policyId,
+    description,
+    requiredRole: params.requiredRole,
+    requiredVoteCount: params.requiredVoteCount,
+    derivationPath: params.derivationPath,
+    chainEnvironment,
+    restrictions,
+    activationTime,
+    proposalExpiryTimeNanosec,
+    requiredPendingActions,
   });
 }
 
@@ -205,6 +412,33 @@ export class DewNearVaultClient {
     const depositYocto = options?.vaultDepositYocto ?? DEFAULT_VAULT_CALL_DEPOSIT_YOCTO;
     const deposit = BigInt(depositYocto);
     return transactions.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit);
+  }
+
+  private buildFtTransferCallAction(params: {
+    receiverId: string;
+    amount: U128String;
+    msg: string;
+    memo?: string;
+    gasTgas?: number;
+    depositYocto?: string;
+  }): transactions.Action {
+    const gasTgas = params.gasTgas ?? DEFAULT_STRATEGIST_TRANSFER_GAS_TGAS;
+    const gas = BigInt(Math.floor(gasTgas * TGAS_TO_GAS));
+    const depositYocto = params.depositYocto ?? DEFAULT_STRATEGIST_TRANSFER_DEPOSIT_YOCTO;
+    const deposit = BigInt(depositYocto);
+    return transactions.functionCall(
+      "ft_transfer_call",
+      Buffer.from(
+        JSON.stringify({
+          receiver_id: params.receiverId,
+          amount: params.amount,
+          memo: params.memo ?? null,
+          msg: params.msg,
+        })
+      ),
+      gas,
+      deposit
+    );
   }
 
   private async proposeVaultCall(
@@ -449,6 +683,63 @@ export class DewNearVaultClient {
     options?: DewVaultCallOptions
   ): Promise<NearProposalResult> {
     return this.proposeVaultCall("dew_vault_transfer_ownership", { new_owner: newOwner }, options);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Strategist transfer helpers (ft_transfer_call into the vault)
+  // ---------------------------------------------------------------------------
+
+  async dewVaultStrategistTransfer(
+    params: DewVaultStrategistTransferParams
+  ): Promise<NearProposalResult> {
+    const msg = JSON.stringify({
+      is_request: params.isRequest ?? false,
+      min_shares: params.minShares ?? "0",
+      is_strategist_transfer: true,
+      ...(params.receiverId ? { receiver_id: params.receiverId } : {}),
+    });
+
+    const action = this.buildFtTransferCallAction({
+      receiverId: this.vaultId,
+      amount: params.amount,
+      msg,
+      memo: params.memo,
+      gasTgas: params.gasTgas,
+      depositYocto: params.depositYocto,
+    });
+
+    return this.dewClient.proposeNearActions(
+      params.policyId,
+      params.tokenId,
+      [action],
+      params.callOptions
+    );
+  }
+
+  async dewVaultStrategistTransferProcessRedeem(
+    params: DewVaultStrategistTransferProcessRedeemParams
+  ): Promise<NearProposalResult> {
+    const msg = JSON.stringify({
+      is_request: params.isRequest ?? false,
+      min_shares: params.minShares ?? "0",
+      process_redeems: params.requestIds,
+    });
+
+    const action = this.buildFtTransferCallAction({
+      receiverId: this.vaultId,
+      amount: params.amount,
+      msg,
+      memo: params.memo,
+      gasTgas: params.gasTgas,
+      depositYocto: params.depositYocto,
+    });
+
+    return this.dewClient.proposeNearActions(
+      params.policyId,
+      params.tokenId,
+      [action],
+      params.callOptions
+    );
   }
 
   // ---------------------------------------------------------------------------
