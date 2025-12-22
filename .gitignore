@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+lib/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+*.tgz
+
+# Turbo repo cache
+.turbo/
+
+# Logs
+*.log
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Editor and OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
