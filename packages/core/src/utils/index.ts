@@ -11,6 +11,15 @@ export {
   withdrawFromIntents,
   getBridgeDepositAddress,
   swapViaIntents,
+  createIntentsPolicyIdMap,
+  createIntentsFtDepositPolicy,
+  createIntentsFtWithdrawToNearPolicy,
+  createIntentsFtWithdrawToEvmPolicy,
+  createIntentsErc20TransferToIntentsPolicy,
+  createIntentsSwapPolicy,
+  DEFAULT_INTENTS_ERC20_TRANSFER_INTERFACE,
+  DEFAULT_INTENTS_POLICY_EXPIRY_NS,
+  INTENTS_POLICY_METHODS,
 } from "./intents.js";
 export type {
   DepositToIntentsParams,
@@ -19,4 +28,12 @@ export type {
   WithdrawFromIntentsResult,
   IntentsSwapParams,
   IntentsSwapResult,
+  IntentsPolicyMethod,
+  IntentsPolicyIdMap,
+  IntentsPolicyIdMapParams,
+  IntentsFtDepositPolicyParams,
+  IntentsFtWithdrawToNearPolicyParams,
+  IntentsFtWithdrawToEvmPolicyParams,
+  IntentsErc20TransferToIntentsPolicyParams,
+  IntentsSwapPolicyParams,
 } from "./intents.js";

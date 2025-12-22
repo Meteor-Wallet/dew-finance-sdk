@@ -1,12 +1,20 @@
 /**
- * NEAR Intents utilities (deposit / withdraw / swap)
+ * NEAR Intents utilities (deposit / withdraw / swap / policy builders)
  * @packageDocumentation
  */
 
 import Big from "big.js";
 import { randomBytes } from "crypto";
 import { transactions, utils } from "near-api-js";
-import type { ChainSigResponse, NearCallOptions, NearTransactionResult } from "../types.js";
+import type {
+  ChainEnvironment,
+  ChainSigResponse,
+  ChainSigSignMethod,
+  NearCallOptions,
+  NearTransactionResult,
+  Policy,
+  PolicyRestriction,
+} from "../types.js";
 import { waitUntil } from "./wait.js";
 
 const TGAS_TO_GAS = 1_000_000_000_000n;
@@ -16,6 +24,102 @@ const DEFAULT_SOLVER_RPC = "https://solver-relay-v2.chaindefuser.com/rpc";
 const DEFAULT_BRIDGE_RPC = "https://bridge.chaindefuser.com/rpc";
 const DEFAULT_QUOTE_DEADLINE_MS = 120000;
 const NONCE_BYTES = 32;
+export const DEFAULT_INTENTS_POLICY_EXPIRY_NS = "86400000000000";
+
+const DEFAULT_POLICY_ACTIVATION_TIME = "0";
+
+export const INTENTS_POLICY_METHODS = [
+  "ft_deposit",
+  "ft_withdraw_to_near",
+  "ft_withdraw_to_evm",
+  "erc20_transfer_to_intents",
+  "intents_swap",
+] as const;
+
+export type IntentsPolicyMethod = (typeof INTENTS_POLICY_METHODS)[number];
+
+export type IntentsPolicyIdMap = Partial<Record<IntentsPolicyMethod, string>>;
+
+export const DEFAULT_INTENTS_ERC20_TRANSFER_INTERFACE = Buffer.from(
+  JSON.stringify([
+    {
+      type: "function",
+      name: "transfer",
+      stateMutability: "nonpayable",
+      inputs: [
+        { name: "to", type: "address" },
+        { name: "amount", type: "uint256" },
+      ],
+      outputs: [{ name: "", type: "bool" }],
+    },
+  ])
+).toString("base64");
+
+export interface IntentsPolicyIdMapParams {
+  policyIds?: IntentsPolicyIdMap;
+  policyIdPrefix?: string;
+}
+
+export function createIntentsPolicyIdMap(
+  params: IntentsPolicyIdMapParams = {}
+): Record<IntentsPolicyMethod, string> {
+  const map = {} as Record<IntentsPolicyMethod, string>;
+  for (const method of INTENTS_POLICY_METHODS) {
+    const explicit = params.policyIds?.[method];
+    if (explicit) {
+      map[method] = explicit;
+      continue;
+    }
+    if (params.policyIdPrefix) {
+      map[method] = `${params.policyIdPrefix}${method}`;
+      continue;
+    }
+    map[method] = method;
+  }
+  return map;
+}
+
+interface IntentsPolicyBaseParams {
+  requiredRole: string;
+  requiredVoteCount: number;
+  derivationPath: string;
+  policyId?: string;
+  policyIdPrefix?: string;
+  description?: string;
+  activationTime?: string;
+  proposalExpiryTimeNanosec?: string;
+  requiredPendingActions?: string[];
+}
+
+export interface IntentsFtDepositPolicyParams extends IntentsPolicyBaseParams {
+  tokenId: string;
+  intentsAccountId?: string;
+  msg?: string;
+  chainEnvironment?: ChainEnvironment;
+}
+
+export interface IntentsFtWithdrawToNearPolicyParams extends IntentsPolicyBaseParams {
+  tokenId: string;
+  intentsAccountId?: string;
+  chainEnvironment?: ChainEnvironment;
+}
+
+export interface IntentsFtWithdrawToEvmPolicyParams extends IntentsPolicyBaseParams {
+  intentsTokenId: string;
+  intentsAccountId?: string;
+  chainEnvironment?: ChainEnvironment;
+}
+
+export interface IntentsErc20TransferToIntentsPolicyParams extends IntentsPolicyBaseParams {
+  tokenAddress: string;
+  intentsDepositAddress: string;
+  chainEnvironment?: ChainEnvironment;
+  interfaceBase64?: string;
+}
+
+export interface IntentsSwapPolicyParams extends IntentsPolicyBaseParams {
+  signMethod?: ChainSigSignMethod;
+}
 
 type Bigish = string | number;
 
@@ -201,6 +305,242 @@ export interface IntentsSwapResult {
   fromIntentsTokenId: string;
   toIntentsTokenId: string;
   swappedAmount?: string;
+}
+
+function resolvePolicyId(
+  method: IntentsPolicyMethod,
+  policyId?: string,
+  policyIdPrefix?: string
+): string {
+  if (policyId) {
+    return policyId;
+  }
+  if (policyIdPrefix) {
+    return `${policyIdPrefix}${method}`;
+  }
+  return method;
+}
+
+function resolvePolicyMeta(
+  params: IntentsPolicyBaseParams,
+  method: IntentsPolicyMethod
+): {
+  policyId: string;
+  description: string;
+  activationTime: string;
+  proposalExpiryTimeNanosec: string;
+  requiredPendingActions: string[];
+} {
+  return {
+    policyId: resolvePolicyId(method, params.policyId, params.policyIdPrefix),
+    description: params.description ?? `Intents policy for ${method}`,
+    activationTime: params.activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME,
+    proposalExpiryTimeNanosec: params.proposalExpiryTimeNanosec ?? DEFAULT_INTENTS_POLICY_EXPIRY_NS,
+    requiredPendingActions: params.requiredPendingActions ?? [],
+  };
+}
+
+function stripNep141Prefix(tokenId: string): string {
+  return tokenId.replace(/^nep141:/, "");
+}
+
+function buildChainSigTransactionPolicy(params: {
+  policyId: string;
+  description: string;
+  requiredRole: string;
+  requiredVoteCount: number;
+  derivationPath: string;
+  chainEnvironment: ChainEnvironment;
+  restrictions: PolicyRestriction[];
+  activationTime: string;
+  proposalExpiryTimeNanosec: string;
+  requiredPendingActions: string[];
+}): Policy {
+  return {
+    id: params.policyId,
+    description: params.description,
+    requiredRole: params.requiredRole,
+    requiredVoteCount: params.requiredVoteCount,
+    policyType: "ChainSigTransaction",
+    policyDetails: {
+      type: "ChainSigTransaction",
+      config: {
+        derivationPath: params.derivationPath,
+        chainEnvironment: params.chainEnvironment,
+        restrictions: params.restrictions,
+      },
+    },
+    activationTime: params.activationTime,
+    proposalExpiryTimeNanosec: params.proposalExpiryTimeNanosec,
+    requiredPendingActions: params.requiredPendingActions,
+  };
+}
+
+function buildChainSigMessagePolicy(params: {
+  policyId: string;
+  description: string;
+  requiredRole: string;
+  requiredVoteCount: number;
+  derivationPath: string;
+  signMethod: ChainSigSignMethod;
+  activationTime: string;
+  proposalExpiryTimeNanosec: string;
+  requiredPendingActions: string[];
+}): Policy {
+  return {
+    id: params.policyId,
+    description: params.description,
+    requiredRole: params.requiredRole,
+    requiredVoteCount: params.requiredVoteCount,
+    policyType: "ChainSigMessage",
+    policyDetails: {
+      type: "ChainSigMessage",
+      config: {
+        derivationPath: params.derivationPath,
+        signMethod: params.signMethod,
+      },
+    },
+    activationTime: params.activationTime,
+    proposalExpiryTimeNanosec: params.proposalExpiryTimeNanosec,
+    requiredPendingActions: params.requiredPendingActions,
+  };
+}
+
+export function createIntentsFtDepositPolicy(params: IntentsFtDepositPolicyParams): Policy {
+  const method: IntentsPolicyMethod = "ft_deposit";
+  const meta = resolvePolicyMeta(params, method);
+  const intentsAccountId = params.intentsAccountId ?? DEFAULT_INTENTS_ACCOUNT;
+  const tokenId = stripNep141Prefix(params.tokenId);
+  const msg = params.msg ?? "";
+  const chainEnvironment = params.chainEnvironment ?? "NearWasm";
+
+  const restrictions: PolicyRestriction[] = [
+    {
+      schema: `and(
+        $.contract_id.equal("${tokenId}"),
+        $.function_name.equal("ft_transfer_call"),
+        $.args.receiver_id.equal("${intentsAccountId}"),
+        $.args.msg.equal("${msg}")
+    )`,
+      interface: "",
+    },
+  ];
+
+  return buildChainSigTransactionPolicy({
+    ...meta,
+    requiredRole: params.requiredRole,
+    requiredVoteCount: params.requiredVoteCount,
+    derivationPath: params.derivationPath,
+    chainEnvironment,
+    restrictions,
+  });
+}
+
+export function createIntentsFtWithdrawToNearPolicy(
+  params: IntentsFtWithdrawToNearPolicyParams
+): Policy {
+  const method: IntentsPolicyMethod = "ft_withdraw_to_near";
+  const meta = resolvePolicyMeta(params, method);
+  const intentsAccountId = params.intentsAccountId ?? DEFAULT_INTENTS_ACCOUNT;
+  const tokenId = stripNep141Prefix(params.tokenId);
+  const chainEnvironment = params.chainEnvironment ?? "NearWasm";
+
+  const restrictions: PolicyRestriction[] = [
+    {
+      schema: `and(
+        $.contract_id.equal("${intentsAccountId}"),
+        $.function_name.equal("ft_withdraw"),
+        $.args.receiver_id.equal(chain_sig_address("${params.derivationPath}","NearWasm")),
+        $.args.token.equal("${tokenId}"),
+        $.args.memo.case_insensitive_equal(concat("WITHDRAW_TO:",chain_sig_address("${params.derivationPath}","NearWasm")))
+    )`,
+      interface: "",
+    },
+  ];
+
+  return buildChainSigTransactionPolicy({
+    ...meta,
+    requiredRole: params.requiredRole,
+    requiredVoteCount: params.requiredVoteCount,
+    derivationPath: params.derivationPath,
+    chainEnvironment,
+    restrictions,
+  });
+}
+
+export function createIntentsFtWithdrawToEvmPolicy(
+  params: IntentsFtWithdrawToEvmPolicyParams
+): Policy {
+  const method: IntentsPolicyMethod = "ft_withdraw_to_evm";
+  const meta = resolvePolicyMeta(params, method);
+  const intentsAccountId = params.intentsAccountId ?? DEFAULT_INTENTS_ACCOUNT;
+  const intentsTokenId = stripNep141Prefix(params.intentsTokenId);
+  const chainEnvironment = params.chainEnvironment ?? "NearWasm";
+
+  const restrictions: PolicyRestriction[] = [
+    {
+      schema: `and(
+        $.contract_id.equal("${intentsAccountId}"),
+        $.function_name.equal("ft_withdraw"),
+        $.args.receiver_id.equal("${intentsTokenId}"),
+        $.args.token.equal("${intentsTokenId}"),
+        $.args.memo.case_insensitive_equal(concat("WITHDRAW_TO:",chain_sig_address("${params.derivationPath}","EVM")))
+    )`,
+      interface: "",
+    },
+  ];
+
+  return buildChainSigTransactionPolicy({
+    ...meta,
+    requiredRole: params.requiredRole,
+    requiredVoteCount: params.requiredVoteCount,
+    derivationPath: params.derivationPath,
+    chainEnvironment,
+    restrictions,
+  });
+}
+
+export function createIntentsErc20TransferToIntentsPolicy(
+  params: IntentsErc20TransferToIntentsPolicyParams
+): Policy {
+  const method: IntentsPolicyMethod = "erc20_transfer_to_intents";
+  const meta = resolvePolicyMeta(params, method);
+  const chainEnvironment = params.chainEnvironment ?? "EVM";
+  const iface = params.interfaceBase64 ?? DEFAULT_INTENTS_ERC20_TRANSFER_INTERFACE;
+
+  const restrictions: PolicyRestriction[] = [
+    {
+      schema: `and(
+        $.contract_id.equal("${params.tokenAddress}"),
+        $.function_name.equal("transfer"),
+        $.args.to.case_insensitive_equal("${params.intentsDepositAddress}")
+    )`,
+      interface: iface,
+    },
+  ];
+
+  return buildChainSigTransactionPolicy({
+    ...meta,
+    requiredRole: params.requiredRole,
+    requiredVoteCount: params.requiredVoteCount,
+    derivationPath: params.derivationPath,
+    chainEnvironment,
+    restrictions,
+  });
+}
+
+export function createIntentsSwapPolicy(params: IntentsSwapPolicyParams): Policy {
+  const method: IntentsPolicyMethod = "intents_swap";
+  const meta = resolvePolicyMeta(params, method);
+  const signMethod = params.signMethod ?? "NearIntentsSwap";
+
+  return buildChainSigMessagePolicy({
+    ...meta,
+    requiredRole: params.requiredRole,
+    requiredVoteCount: params.requiredVoteCount,
+    derivationPath: params.derivationPath,
+    signMethod,
+  });
 }
 
 function toAmount(value: Bigish): string {

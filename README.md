@@ -39,6 +39,7 @@ It also includes helpers for intents-based bridging and common polling patterns.
 - Auto-execute detection for proposals
 - NEAR intents bridging helpers
 - NEAR intents swapping helpers
+- NEAR intents policy builders (ft deposit/withdraw, ERC-20 transfer, swap signing)
 - Dew Vault (NEAR) client: propose helpers, policies, and full getter suite
 
 ## Roadmap
@@ -50,7 +51,7 @@ It also includes helpers for intents-based bridging and common polling patterns.
 
 ## Packages
 
-- `@dew-finance/core`: DewClient, DewNearVaultClient, core types, and NEAR/EVM utilities (broadcasting, intents, polling).
+- `@dew-finance/core`: DewClient, DewNearVaultClient, core types, and NEAR/EVM utilities (broadcasting, intents, policy builders, polling).
 
 ## Requirements
 
