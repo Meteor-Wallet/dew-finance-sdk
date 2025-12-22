@@ -523,9 +523,7 @@ export class DewNearVaultClient {
     return this.viewVault("get_total_confirmed_pending_redeem_assets", {}, options);
   }
 
-  async getTotalUnconfirmedPendingRedeemShares(
-    options?: NearViewOptions
-  ): Promise<U128String> {
+  async getTotalUnconfirmedPendingRedeemShares(options?: NearViewOptions): Promise<U128String> {
     return this.viewVault("get_total_unconfirmed_pending_redeem_shares", {}, options);
   }
 
@@ -586,7 +584,11 @@ export class DewNearVaultClient {
     depositAmount: U128String,
     options?: NearViewOptions
   ): Promise<U128String> {
-    return this.viewVault("preview_deposit_shares", { asset, deposit_amount: depositAmount }, options);
+    return this.viewVault(
+      "preview_deposit_shares",
+      { asset, deposit_amount: depositAmount },
+      options
+    );
   }
 
   async previewRedeemAssetAmount(
@@ -624,17 +626,11 @@ export class DewNearVaultClient {
     return this.viewVault("get_confirmed_share_price", { operation_id: operationId }, options);
   }
 
-  async getWithdrawInfo(
-    operationId: number,
-    options?: NearViewOptions
-  ): Promise<Withdraw | null> {
+  async getWithdrawInfo(operationId: number, options?: NearViewOptions): Promise<Withdraw | null> {
     return this.viewVault("get_withdraw_info", { operation_id: operationId }, options);
   }
 
-  async getDepositInfo(
-    operationId: number,
-    options?: NearViewOptions
-  ): Promise<Deposit | null> {
+  async getDepositInfo(operationId: number, options?: NearViewOptions): Promise<Deposit | null> {
     return this.viewVault("get_deposit_info", { operation_id: operationId }, options);
   }
 
@@ -666,10 +662,7 @@ export class DewNearVaultClient {
     return this.viewVault("get_all_fees_owed", {}, options);
   }
 
-  async getProtocolFeesOwedForAsset(
-    asset: Asset,
-    options?: NearViewOptions
-  ): Promise<U128String> {
+  async getProtocolFeesOwedForAsset(asset: Asset, options?: NearViewOptions): Promise<U128String> {
     return this.viewVault("get_protocol_fees_owed_for_asset", { asset }, options);
   }
 
@@ -756,9 +749,7 @@ export class DewNearVaultClient {
     return this.viewVault("is_accountant_paused", {}, options);
   }
 
-  async getCrystallizationInfo(
-    options?: NearViewOptions
-  ): Promise<DewVaultCrystallizationInfo> {
+  async getCrystallizationInfo(options?: NearViewOptions): Promise<DewVaultCrystallizationInfo> {
     return this.viewVault("get_crystallization_info", {}, options);
   }
 

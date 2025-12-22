@@ -38,11 +38,11 @@ It also includes helpers for intents-based bridging and common polling patterns.
 - Broadcast utilities for signed NEAR and EVM transactions
 - Auto-execute detection for proposals
 - NEAR intents bridging helpers
+- NEAR intents swapping helpers
 - Dew Vault (NEAR) client: propose helpers, policies, and full getter suite
 
 ## Roadmap
 
-- NEAR intents swapping
 - Dew Vault (EVM) support
 - CLI tools for deploying kernels and vaults
 - Pre-made policies for kernel configuration

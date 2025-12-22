@@ -16,6 +16,7 @@ import type {
   RoleTarget,
   ChangeControl,
   VoteProposalResult,
+  ChainEnvironment,
   NearCallOptions,
   NearRpcOptions,
   NearViewOptions,
@@ -172,9 +173,33 @@ export class DewClient {
     return text ? (JSON.parse(text) as T) : (null as unknown as T);
   }
 
+  /**
+   * Derive chain signature public key + address for a derivation path
+   */
+  async deriveChainSigAccount(
+    params: {
+      chain: ChainEnvironment;
+      derivationPath: string;
+      nearNetwork?: "Mainnet" | "Testnet";
+    },
+    options?: NearViewOptions
+  ): Promise<{ public_key: string; address: string }> {
+    const nearNetwork = params.nearNetwork ?? "Mainnet";
+    return this.viewFunction(
+      this.kernelId,
+      "derive_address_and_public_key",
+      {
+        path: params.derivationPath,
+        chain: params.chain,
+        near_network: nearNetwork,
+      },
+      options
+    );
+  }
+
   async proposeExecution(
     policyId: string,
-    functionArgs: Record<string, unknown>,
+    functionArgs: Record<string, unknown> | string,
     options?: NearCallOptions
   ): Promise<providers.FinalExecutionOutcome> {
     return this.callKernel(

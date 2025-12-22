@@ -6,12 +6,17 @@ export type { WaitForOptions, WaitPollOptions, WaitUntilOptions } from "./wait.j
 export { broadcastNearTransaction, broadcastEvmTransaction } from "./broadcast.js";
 
 // NEAR intents
-export { depositToIntents, withdrawFromIntents } from "./intents.js";
+export {
+  depositToIntents,
+  withdrawFromIntents,
+  getBridgeDepositAddress,
+  swapViaIntents,
+} from "./intents.js";
 export type {
-  DewClientLike,
-  NearCallOptions,
   DepositToIntentsParams,
   DepositToIntentsResult,
   WithdrawFromIntentsParams,
   WithdrawFromIntentsResult,
+  IntentsSwapParams,
+  IntentsSwapResult,
 } from "./intents.js";

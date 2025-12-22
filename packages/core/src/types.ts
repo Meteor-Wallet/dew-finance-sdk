@@ -338,6 +338,16 @@ export const POLICY_IDS: string[] = [
 // MPC Signature Types
 // =============================================================================
 
+/** Chain signature response from chain-sig contract */
+export type ChainSigResponse =
+  | { scheme: "Ed25519"; signature: number[] }
+  | {
+      scheme: "Secp256k1";
+      big_r: { affine_point: string };
+      s: { scalar: string };
+      recovery_id: number;
+    };
+
 /** MPC signature from chain signature contract */
 export interface MPCSignature {
   big_r: string;
