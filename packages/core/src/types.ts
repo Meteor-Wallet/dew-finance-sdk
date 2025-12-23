@@ -201,8 +201,22 @@ export type PolicyType =
 
 type SerializeTx = string
 
+type PolicyTypeAndDetails = {
+  policyType: "KernelConfiguration";
+  policyDetails: KernelConfigPolicyDetails;
+} | {
+  policyType: "ChainSigTransaction";
+  policyDetails: ChainSigPolicyDetails;
+} | {
+  policyType: "NearNativeTransaction";
+  policyDetails: NearNativePolicyDetails;
+} | {
+  policyType: "ChainSigMessage";
+  policyDetails: ChainSigMessagePolicyDetails;
+}
+
 /** Policy definition */
-export interface Policy {
+export type Policy = {
   /** Policy ID */
   id: string;
   /** Policy description */
@@ -211,10 +225,6 @@ export interface Policy {
   requiredRole: string;
   /** Number of votes required to approve */
   requiredVoteCount: number;
-  /** Policy type */
-  policyType: PolicyType;
-  /** Policy-specific details */
-  policyDetails: PolicyDetails;
   /** Nano timestamp when this policy becomes active (for activation delays) */
   activationTime: string;
   /** Proposal expiry duration in nanoseconds */
@@ -222,7 +232,7 @@ export interface Policy {
   /** Follow-up actions that must be completed after this policy executes */
   requiredPendingActions: string[];
   builder?: (args: any) => SerializeTx | Action[]
-}
+} & PolicyTypeAndDetails
 
 /** Emergency configuration */
 export interface EmergencyConfig {
@@ -236,23 +246,31 @@ export interface EmergencyConfig {
   emergencyVoteDurationNs: string;
 }
 
+type ChainSigPolicyDetails = {
+  type: "ChainSigTransaction";
+  config: ChainSigTransactionConfig;
+}
+
+type NearNativePolicyDetails = {
+  type: "NearNativeTransaction";
+  config: NearNativeTransactionConfig;
+}
+
+type ChainSigMessagePolicyDetails = {
+  type: "ChainSigMessage";
+  config: ChainSigMessageConfig;
+}
+
+type KernelConfigPolicyDetails = {
+  type: "KernelConfiguration";
+}
+
 /** Policy-specific configuration details */
 export type PolicyDetails =
-  | {
-      type: "ChainSigTransaction";
-      config: ChainSigTransactionConfig;
-    }
-  | {
-      type: "NearNativeTransaction";
-      config: NearNativeTransactionConfig;
-    }
-  | {
-      type: "ChainSigMessage";
-      config: ChainSigMessageConfig;
-    }
-  | {
-      type: "KernelConfiguration";
-    };
+  | ChainSigPolicyDetails
+  | NearNativePolicyDetails
+  | ChainSigMessagePolicyDetails
+  | KernelConfigPolicyDetails;
 
 /** Chain environment specification */
 export type ChainEnvironment = "SVM" | "EVM" | "NearWasm";
