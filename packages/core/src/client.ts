@@ -25,11 +25,24 @@ import type {
 import { sendNearTransaction, getNearProvider } from "./near.js";
 import { providers, transactions } from "near-api-js";
 import type { transactions as txType } from "near-api-js";
+import type { Action } from "near-api-js/lib/transaction.js";
 
 const TGAS_TO_GAS = 1_000_000_000_000; // 1e12
 const DEFAULT_GAS_TGAS = 150; // sensible default
 const ONE_YOCTO = "1";
 const DEFAULT_DEPOSIT_YOCTO = ONE_YOCTO;
+
+type ExecuteParams<TPolicies extends Record<string, Policy>, P extends keyof TPolicies> =
+  undefined extends TPolicies[P]["builder"]
+    ? { id: P; prebuilt: string | Action[] }
+    : {
+        id: P
+        args: Parameters<Exclude<TPolicies[P]["builder"], undefined>>
+      }
+
+type ExecuteParamUnion<TPolicies extends Record<string, Policy>> = {
+  [P in keyof TPolicies]: ExecuteParams<TPolicies, P>
+}[keyof TPolicies]
 
 /**
  * Main Dew Finance SDK client
@@ -47,7 +60,7 @@ const DEFAULT_DEPOSIT_YOCTO = ONE_YOCTO;
  * const result = await dew.proposeEvmTransaction('evm_policy', serializedTx);
  * ```
  */
-export class DewClient {
+export class DewClient<TPolicies extends Record<string, Policy>> {
   /** NEAR account (near-api-js Account) */
   private readonly nearAccount?: NearWallet;
   /** NEAR JSON-RPC provider for views and broadcasts */
@@ -58,13 +71,30 @@ export class DewClient {
   /** Bound kernel ID for this client */
   private readonly kernelId: string;
 
+  private readonly policies: TPolicies;
+
   // Flattened client: no sub-clients.
 
-  constructor(config: DewClientConfig) {
+  constructor(config: DewClientConfig<TPolicies>) {
     this.kernelId = config.kernelId;
     this.nearAccount = config.nearWallet;
     this.nearProvider = config.nearProvider;
     this.nearRpcUrl = config.nearRpcUrl;
+    this.policies = config.policies;
+  }
+
+  execute(params: ExecuteParamUnion<TPolicies>) {
+    const id = params.id;
+    const declaredBuilder = this.policies[id].builder;
+    let result: string | Action[];
+
+    if ("args" in params && declaredBuilder) {
+      result = declaredBuilder.call(null, params.args);
+    } else if ("prebuilt" in params) {
+      result = params.prebuilt as string | Action[];
+    }
+
+    // use the result to continue propose execution
   }
 
   /**
@@ -662,6 +692,6 @@ export function extractMPCSignatures(result: providers.FinalExecutionOutcome): M
 /**
  * Create a new DewClient instance
  */
-export function createDewClient(config: DewClientConfig): DewClient {
+export function createDewClient<T extends Record<string, Policy>>(config: DewClientConfig<T>) {
   return new DewClient(config);
 }

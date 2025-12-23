@@ -30,7 +30,81 @@ const wallets: NearWallet[] = await Promise.all(
 const dew = new DewClient({
   kernelId: "mock.kernel.testnet",
   nearWallet: wallets[0] as NearWallet,
+  policies: {
+    "policyWithoutBuilder": {
+      id: "near_policy",
+      description: "near_policy",
+      requiredRole: "owner",
+      requiredVoteCount: 1,
+      policyType: "NearNativeTransaction",
+      policyDetails: {
+        type: "NearNativeTransaction",
+        config: {
+          chainEnvironment: "NearWasm",
+          restrictions: [],
+        },
+      },
+      activationTime: "0",
+      proposalExpiryTimeNanosec: "0",
+      requiredPendingActions: [],
+    },
+    "policyWithBuilder": {
+      id: "near_policy",
+      description: "near_policy",
+      requiredRole: "owner",
+      requiredVoteCount: 1,
+      policyType: "NearNativeTransaction",
+      policyDetails: {
+        type: "NearNativeTransaction",
+        config: {
+          chainEnvironment: "NearWasm",
+          restrictions: [],
+        },
+      },
+      activationTime: "0",
+      proposalExpiryTimeNanosec: "0",
+      requiredPendingActions: [],
+      builder: (args: {foo: string, bar: number}) => {
+        return ""
+      }
+    },
+    "policyWithBuilder2": {
+      id: "near_policy",
+      description: "near_policy",
+      requiredRole: "owner",
+      requiredVoteCount: 1,
+      policyType: "NearNativeTransaction",
+      policyDetails: {
+        type: "NearNativeTransaction",
+        config: {
+          chainEnvironment: "NearWasm",
+          restrictions: [],
+        },
+      },
+      activationTime: "0",
+      proposalExpiryTimeNanosec: "0",
+      requiredPendingActions: [],
+      builder: (args: {foo: string, bar: number, fizz: bigint}) => {
+        return ""
+      }
+    },
+  }
 });
+
+dew.execute({
+  id: "policyWithoutBuilder",
+  prebuilt: ""
+})
+
+dew.execute({
+  id: "policyWithBuilder",
+  args: [{foo: "bar", bar: 123}],
+})
+
+dew.execute({
+  id: "policyWithBuilder2",
+  args: [{foo: "bar", bar: 123, fizz: BigInt(456)}],
+})
 
 async function run() {
   // Propose + Auto Execute (1 vote required by policy)

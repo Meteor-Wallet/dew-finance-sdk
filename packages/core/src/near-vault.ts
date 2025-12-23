@@ -132,9 +132,9 @@ export interface DewVaultStrategistTransferProcessRedeemParams {
   callOptions?: NearCallOptions;
 }
 
-export interface DewNearVaultClientConfig {
+export interface DewNearVaultClientConfig<TPolicies extends Record<string, Policy>> {
   /** Bound DewClient instance */
-  dewClient: DewClient;
+  dewClient: DewClient<TPolicies>;
   /** Dew Vault contract account ID */
   vaultId: string;
   /** Per-method policy ID overrides */
@@ -373,12 +373,12 @@ export function createDewVaultStrategistTransferProcessRedeemPolicy(
   });
 }
 
-export class DewNearVaultClient {
-  private readonly dewClient: DewClient;
+export class DewNearVaultClient<TPolicies extends Record<string, Policy>> {
+  private readonly dewClient: DewClient<TPolicies>;
   private readonly vaultId: string;
   private readonly policyIds: Record<DewVaultMethod, string>;
 
-  constructor(config: DewNearVaultClientConfig) {
+  constructor(config: DewNearVaultClientConfig<TPolicies>) {
     this.dewClient = config.dewClient;
     this.vaultId = config.vaultId;
     this.policyIds = createDewVaultPolicyIdMap({

@@ -3,6 +3,7 @@
  * @packageDocumentation
  */
 import type { Account, providers, transactions } from "near-api-js";
+import type { Action } from "near-api-js/lib/transaction";
 import type { PublicClient } from "viem";
 
 // =============================================================================
@@ -198,6 +199,8 @@ export type PolicyType =
   | "NearNativeTransaction"
   | "ChainSigMessage";
 
+type SerializeTx = string
+
 /** Policy definition */
 export interface Policy {
   /** Policy ID */
@@ -218,6 +221,7 @@ export interface Policy {
   proposalExpiryTimeNanosec: string;
   /** Follow-up actions that must be completed after this policy executes */
   requiredPendingActions: string[];
+  builder?: (args: any) => SerializeTx | Action[]
 }
 
 /** Emergency configuration */
@@ -540,7 +544,7 @@ export interface AssetBalance {
 // =============================================================================
 
 /** Dew client configuration */
-export interface DewClientConfig {
+export interface DewClientConfig <T extends Record<string, Policy>> {
   /** Kernel account ID */
   kernelId: string;
   /** NEAR wallet for signing */
@@ -549,6 +553,7 @@ export interface DewClientConfig {
   nearProvider?: providers.JsonRpcProvider;
   /** NEAR RPC URL (used if no provider is supplied) */
   nearRpcUrl?: string;
+  policies: T
 }
 
 /** Role definition */
