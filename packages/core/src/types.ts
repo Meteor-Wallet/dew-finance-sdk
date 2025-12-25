@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 import type { Account, providers, transactions } from "near-api-js";
-import type { PublicClient } from "viem";
+import type { Action } from "near-api-js/lib/transaction";
 
 // =============================================================================
 // NEAR call defaults and options
@@ -30,11 +30,30 @@ export interface NearCallOptions extends NearRpcOptions {
 /** Options to override NEAR RPC settings for view calls */
 export type NearViewOptions = NearRpcOptions;
 
-/** Options to override EVM broadcast client */
-export interface EvmBroadcastOptions {
-  /** Override viem public client */
-  evmClient?: PublicClient;
+/** Encoding format for ChainSig transaction payloads */
+export type ChainSigEncoding = "hex" | "base64";
+
+/** Options for proposing ChainSig transactions */
+export interface ChainSigProposeOptions extends NearCallOptions {
+  /** Encoding of the serialized transaction payload */
+  encoding?: ChainSigEncoding;
 }
+
+export interface ChainSigExecutionOptions<UnsignedTx = unknown, SignedTx = string> {
+  /** Adapter used to finalize and broadcast a ChainSig transaction */
+  adapter: ChainSigTransactionAdapter<UnsignedTx, SignedTx>;
+  /** Unsigned transaction object to attach signatures to */
+  unsignedTx: UnsignedTx;
+  /** Broadcast the signed transaction (defaults to true) */
+  broadcast?: boolean;
+}
+
+export type ChainSigExecuteOptions<
+  UnsignedTx = unknown,
+  SignedTx = string,
+> = ChainSigProposeOptions & {
+  chainSig?: ChainSigExecutionOptions<UnsignedTx, SignedTx>;
+};
 
 // =============================================================================
 // Kernel Contract Types
@@ -197,9 +216,98 @@ export type PolicyType =
   | "ChainSigTransaction"
   | "NearNativeTransaction"
   | "ChainSigMessage";
+export type ChainSigExecutionPayload = string | Uint8Array;
+
+export type NearNativeExecutionPayload = {
+  receiverId: string;
+  actions: Action[];
+};
+
+export type KernelExecutionPayload = Record<string, unknown> | string;
+
+export type PolicyExecutionPayload =
+  | ChainSigExecutionPayload
+  | NearNativeExecutionPayload
+  | KernelExecutionPayload;
+
+export type PolicyDetailsByType = {
+  KernelConfiguration: KernelConfigPolicyDetails;
+  ChainSigTransaction: ChainSigPolicyDetails;
+  NearNativeTransaction: NearNativePolicyDetails;
+  ChainSigMessage: ChainSigMessagePolicyDetails;
+};
+
+type PolicySpecBase<TType extends PolicyType = PolicyType> = Omit<
+  Policy,
+  "policyType" | "policyDetails"
+> & {
+  policyType: TType;
+  policyDetails: PolicyDetailsByType[TType];
+};
+
+export type PolicyBuilder<TArgs extends unknown[], TPayload> = {
+  bivarianceHack(...args: TArgs): TPayload;
+}["bivarianceHack"];
+
+export type PolicySpec<
+  TType extends PolicyType = PolicyType,
+  TPayload extends PolicyExecutionPayload = PolicyExecutionPayload,
+  TArgs extends unknown[] = unknown[],
+> = PolicySpecBase<TType> & {
+  builder?: PolicyBuilder<TArgs, TPayload>;
+};
+
+export type PolicySpecWithBuilder<
+  TType extends PolicyType,
+  TPayload extends PolicyExecutionPayload,
+  TArgs extends unknown[],
+> = PolicySpecBase<TType> & {
+  builder: PolicyBuilder<TArgs, TPayload>;
+};
+
+export type ChainSigPolicySpec<TArgs extends unknown[] = unknown[]> = PolicySpec<
+  "ChainSigTransaction",
+  ChainSigExecutionPayload,
+  TArgs
+>;
+
+export type ChainSigPolicySpecWithBuilder<TArgs extends unknown[] = unknown[]> =
+  PolicySpecWithBuilder<"ChainSigTransaction", ChainSigExecutionPayload, TArgs>;
+
+export type NearNativePolicySpec<TArgs extends unknown[] = unknown[]> = PolicySpec<
+  "NearNativeTransaction",
+  NearNativeExecutionPayload,
+  TArgs
+>;
+
+export type NearNativePolicySpecWithBuilder<TArgs extends unknown[] = unknown[]> =
+  PolicySpecWithBuilder<"NearNativeTransaction", NearNativeExecutionPayload, TArgs>;
+
+export type KernelConfigPolicySpec<TArgs extends unknown[] = unknown[]> = PolicySpec<
+  "KernelConfiguration",
+  KernelExecutionPayload,
+  TArgs
+>;
+
+export type KernelConfigPolicySpecWithBuilder<TArgs extends unknown[] = unknown[]> =
+  PolicySpecWithBuilder<"KernelConfiguration", KernelExecutionPayload, TArgs>;
+
+export type ChainSigMessagePolicySpec<TArgs extends unknown[] = unknown[]> = PolicySpec<
+  "ChainSigMessage",
+  never,
+  TArgs
+>;
+
+export type PolicySpecMap = Record<string, PolicySpec<PolicyType, PolicyExecutionPayload, any[]>>;
+
+export const definePolicies = <T extends PolicySpecMap>(policies: T): T => policies;
+
+type PolicyTypeAndDetails = {
+  [K in PolicyType]: { policyType: K; policyDetails: PolicyDetailsByType[K] };
+}[PolicyType];
 
 /** Policy definition */
-export interface Policy {
+export type Policy = {
   /** Policy ID */
   id: string;
   /** Policy description */
@@ -208,17 +316,13 @@ export interface Policy {
   requiredRole: string;
   /** Number of votes required to approve */
   requiredVoteCount: number;
-  /** Policy type */
-  policyType: PolicyType;
-  /** Policy-specific details */
-  policyDetails: PolicyDetails;
   /** Nano timestamp when this policy becomes active (for activation delays) */
   activationTime: string;
   /** Proposal expiry duration in nanoseconds */
   proposalExpiryTimeNanosec: string;
   /** Follow-up actions that must be completed after this policy executes */
   requiredPendingActions: string[];
-}
+} & PolicyTypeAndDetails;
 
 /** Emergency configuration */
 export interface EmergencyConfig {
@@ -232,23 +336,31 @@ export interface EmergencyConfig {
   emergencyVoteDurationNs: string;
 }
 
+type ChainSigPolicyDetails = {
+  type: "ChainSigTransaction";
+  config: ChainSigTransactionConfig;
+};
+
+type NearNativePolicyDetails = {
+  type: "NearNativeTransaction";
+  config: NearNativeTransactionConfig;
+};
+
+type ChainSigMessagePolicyDetails = {
+  type: "ChainSigMessage";
+  config: ChainSigMessageConfig;
+};
+
+type KernelConfigPolicyDetails = {
+  type: "KernelConfiguration";
+};
+
 /** Policy-specific configuration details */
 export type PolicyDetails =
-  | {
-      type: "ChainSigTransaction";
-      config: ChainSigTransactionConfig;
-    }
-  | {
-      type: "NearNativeTransaction";
-      config: NearNativeTransactionConfig;
-    }
-  | {
-      type: "ChainSigMessage";
-      config: ChainSigMessageConfig;
-    }
-  | {
-      type: "KernelConfiguration";
-    };
+  | ChainSigPolicyDetails
+  | NearNativePolicyDetails
+  | ChainSigMessagePolicyDetails
+  | KernelConfigPolicyDetails;
 
 /** Chain environment specification */
 export type ChainEnvironment = "SVM" | "EVM" | "NearWasm";
@@ -355,12 +467,23 @@ export interface MPCSignature {
   recovery_id: number;
 }
 
+/** Adapter interface for finalizing and broadcasting ChainSig transactions */
+export interface ChainSigTransactionAdapter<UnsignedTx = unknown, SignedTx = string> {
+  /** Attach MPC signatures to an unsigned transaction */
+  finalizeTransactionSigning(params: {
+    transaction: UnsignedTx;
+    signatures: MPCSignature[];
+  }): SignedTx;
+  /** Broadcast a signed transaction to the target chain */
+  broadcastTx(signedTx: SignedTx): Promise<string>;
+}
+
 // =============================================================================
 // Proposal Result Types
 // =============================================================================
 
-/** Result from proposing an EVM transaction */
-export type EvmProposalResult =
+/** Result from proposing a ChainSig transaction */
+export type ChainSigTransactionProposalResult =
   | { executed: false; proposalId: number; outcome: NearTransactionResult }
   | {
       executed: true;
@@ -368,6 +491,12 @@ export type EvmProposalResult =
       signatures: MPCSignature[];
       outcome: NearTransactionResult;
     };
+
+export type ChainSigTransactionExecuteResult<SignedTx = string> =
+  ChainSigTransactionProposalResult & {
+    signedTx?: SignedTx;
+    broadcastTxHash?: string;
+  };
 
 /** Result from proposing NEAR actions */
 export type NearProposalResult =
@@ -427,39 +556,8 @@ export interface FungibleTokenMetadata {
 }
 
 // =============================================================================
-// Wallet Types
+// NEAR Transaction Types
 // =============================================================================
-
-/** Wallet interface for signing transactions */
-export interface Wallet {
-  /** Get the wallet address */
-  getAddress(): Promise<string>;
-  /** Sign and send a transaction */
-  signAndSend(transaction: Transaction): Promise<TransactionResult>;
-  /** Sign a message */
-  signMessage(message: Uint8Array): Promise<Uint8Array>;
-}
-
-/** NEAR account (direct near-api-js dependency) */
-export type NearWallet = Account;
-
-/** EVM-specific wallet interface */
-export interface EvmWallet extends Wallet {
-  /** Sign typed data (EIP-712) */
-  signTypedData(data: Record<string, unknown>): Promise<string>;
-}
-
-// =============================================================================
-// Transaction Types
-// =============================================================================
-
-/** Generic transaction */
-export interface Transaction {
-  /** Transaction type */
-  type: "near" | "evm";
-  /** Transaction data */
-  data: NearTransactionData | EvmTransactionData;
-}
 
 /** NEAR transaction data (using near-api-js actions) */
 export interface NearTransactionData {
@@ -469,78 +567,22 @@ export interface NearTransactionData {
   actions: transactions.Action[];
 }
 
-/** NEAR action alias (near-api-js) */
-export type NearAction = transactions.Action;
-
-/** EVM transaction data */
-export interface EvmTransactionData {
-  /** Target contract address */
-  to: string;
-  /** Value in wei */
-  value?: string;
-  /** Calldata */
-  data?: string;
-  /** Gas limit */
-  gasLimit?: string;
-  /** Gas price (legacy) */
-  gasPrice?: string;
-  /** Max fee per gas (EIP-1559) */
-  maxFeePerGas?: string;
-  /** Max priority fee per gas (EIP-1559) */
-  maxPriorityFeePerGas?: string;
-  /** Nonce */
-  nonce?: number;
-}
-
-/** Transaction result */
-export interface TransactionResult {
-  /** Transaction hash */
-  hash: string;
-  /** Whether the transaction succeeded */
-  success: boolean;
-  /** Block number/height */
-  blockNumber?: number;
-  /** Gas used */
-  gasUsed?: string;
-  /** Transaction events/logs */
-  events: TransactionEvent[];
-  /** Raw result data */
-  raw?: Record<string, unknown> | string | number | boolean | null;
-}
-
 /** NEAR-specific transaction result (near-api-js outcome) */
 export type NearTransactionResult = providers.FinalExecutionOutcome;
 
-/** Transaction event/log */
-export interface TransactionEvent {
-  /** Event name */
-  name: string;
-  /** Contract/account that emitted the event */
-  address: string;
-  /** Event data */
-  data: Record<string, unknown>;
-  /** Log index */
-  logIndex?: number;
-}
+// =============================================================================
+// Wallet Types
+// =============================================================================
 
-/** Asset balance in a position */
-export interface AssetBalance {
-  /** The token */
-  token: Token;
-  /** Balance amount */
-  balance: string;
-  /** USD value */
-  valueUsd?: string;
-  /** APY (positive for supply, negative for borrow) */
-  apy?: number;
-}
+/** NEAR account (direct near-api-js dependency) */
+export type NearWallet = Account;
 
 // =============================================================================
 // Client Configuration Types
 // =============================================================================
 
 /** Dew client configuration */
-export interface DewClientConfig {
+export interface DewClientConfig<T extends PolicySpecMap> {
   /** Kernel account ID */
   kernelId: string;
   /** NEAR wallet for signing */
@@ -549,6 +591,7 @@ export interface DewClientConfig {
   nearProvider?: providers.JsonRpcProvider;
   /** NEAR RPC URL (used if no provider is supplied) */
   nearRpcUrl?: string;
+  policies: T;
 }
 
 /** Role definition */

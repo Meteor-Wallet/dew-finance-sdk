@@ -5,6 +5,9 @@ export type { WaitForOptions, WaitPollOptions, WaitUntilOptions } from "./wait.j
 // Broadcasting
 export { broadcastNearTransaction, broadcastEvmTransaction } from "./broadcast.js";
 
+// ChainSig helpers
+export { finalizeTransactionSigning, broadcastTx } from "./chainsig.js";
+
 // NEAR intents
 export {
   depositToIntents,

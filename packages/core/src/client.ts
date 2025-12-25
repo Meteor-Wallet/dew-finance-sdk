@@ -9,10 +9,14 @@ import type {
   NearTransactionData,
   Proposal,
   MPCSignature,
-  EvmProposalResult,
+  ChainSigTransactionProposalResult,
+  ChainSigTransactionExecuteResult,
   NearProposalResult,
   KernelCoreProposalResult,
   Policy,
+  PolicySpecMap,
+  PolicyExecutionPayload,
+  NearNativeExecutionPayload,
   RoleTarget,
   ChangeControl,
   VoteProposalResult,
@@ -21,6 +25,8 @@ import type {
   NearRpcOptions,
   NearViewOptions,
   NearTransactionResult,
+  ChainSigProposeOptions,
+  ChainSigExecuteOptions,
 } from "./types.js";
 import { sendNearTransaction, getNearProvider } from "./near.js";
 import { providers, transactions } from "near-api-js";
@@ -30,6 +36,28 @@ const TGAS_TO_GAS = 1_000_000_000_000; // 1e12
 const DEFAULT_GAS_TGAS = 150; // sensible default
 const ONE_YOCTO = "1";
 const DEFAULT_DEPOSIT_YOCTO = ONE_YOCTO;
+
+type ExecuteOptionsFor<TPolicy> = TPolicy extends { policyType: "ChainSigTransaction" }
+  ? ChainSigExecuteOptions
+  : NearCallOptions;
+
+type ExecuteParams<
+  TPolicies extends PolicySpecMap,
+  P extends keyof TPolicies,
+> = TPolicies[P] extends { builder: (...args: infer A) => PolicyExecutionPayload }
+  ? {
+      id: P;
+      options?: ExecuteOptionsFor<TPolicies[P]>;
+    } & ({ args: A; prebuilt?: never } | { prebuilt: PolicyExecutionPayload; args?: never })
+  : {
+      id: P;
+      prebuilt: PolicyExecutionPayload;
+      options?: ExecuteOptionsFor<TPolicies[P]>;
+    };
+
+type ExecuteParamUnion<TPolicies extends PolicySpecMap> = {
+  [P in keyof TPolicies]: ExecuteParams<TPolicies, P>;
+}[keyof TPolicies];
 
 /**
  * Main Dew Finance SDK client
@@ -43,11 +71,11 @@ const DEFAULT_DEPOSIT_YOCTO = ONE_YOCTO;
  *   nearWallet: myNearWallet,
  * });
  *
- * // Propose an EVM transaction under a policy
- * const result = await dew.proposeEvmTransaction('evm_policy', serializedTx);
+ * // Propose a ChainSig transaction under a policy
+ * const result = await dew.proposeChainSigTransaction('chainsig_policy', serializedTx);
  * ```
  */
-export class DewClient {
+export class DewClient<TPolicies extends PolicySpecMap> {
   /** NEAR account (near-api-js Account) */
   private readonly nearAccount?: NearWallet;
   /** NEAR JSON-RPC provider for views and broadcasts */
@@ -58,13 +86,124 @@ export class DewClient {
   /** Bound kernel ID for this client */
   private readonly kernelId: string;
 
+  private readonly policies: TPolicies;
+
   // Flattened client: no sub-clients.
 
-  constructor(config: DewClientConfig) {
+  constructor(config: DewClientConfig<TPolicies>) {
     this.kernelId = config.kernelId;
     this.nearAccount = config.nearWallet;
     this.nearProvider = config.nearProvider;
     this.nearRpcUrl = config.nearRpcUrl;
+    this.policies = config.policies;
+    for (const [key, policy] of Object.entries(this.policies)) {
+      if (policy.id !== key) {
+        throw new Error(`Policy map key "${key}" must match policy.id "${policy.id}".`);
+      }
+    }
+  }
+
+  async execute(
+    params: ExecuteParamUnion<TPolicies>
+  ): Promise<
+    ChainSigTransactionExecuteResult | NearProposalResult | providers.FinalExecutionOutcome
+  > {
+    const id = params.id;
+    const policy = this.policies[id];
+    if (!policy) {
+      throw new Error(`Policy ${String(id)} not found in client policies.`);
+    }
+
+    const declaredBuilder = policy.builder;
+    let payload: PolicyExecutionPayload | undefined;
+
+    if ("args" in params && params.args !== undefined) {
+      if (!declaredBuilder) {
+        throw new Error(`Policy ${String(id)} does not define a builder.`);
+      }
+      payload = declaredBuilder(...params.args);
+    } else if ("prebuilt" in params) {
+      payload = params.prebuilt;
+    }
+
+    if (payload === undefined) {
+      throw new Error(`Policy ${String(id)} execution payload is missing.`);
+    }
+
+    switch (policy.policyType) {
+      case "ChainSigTransaction": {
+        if (!(typeof payload === "string" || payload instanceof Uint8Array)) {
+          throw new Error(
+            `Policy ${String(id)} expects a serialized transaction (string or Uint8Array).`
+          );
+        }
+        const chainSigOptions = params.options as ChainSigExecuteOptions | undefined;
+
+        const proposal = await this.proposeChainSigTransaction(
+          String(id),
+          payload,
+          chainSigOptions
+        );
+
+        if (!proposal.executed || !chainSigOptions?.chainSig) {
+          return proposal;
+        }
+
+        const { adapter, unsignedTx, broadcast } = chainSigOptions.chainSig;
+        const signedTx = adapter.finalizeTransactionSigning({
+          transaction: unsignedTx,
+          signatures: proposal.signatures,
+        });
+
+        if (broadcast === false) {
+          return { ...proposal, signedTx };
+        }
+
+        const broadcastTxHash = await adapter.broadcastTx(signedTx);
+        return { ...proposal, signedTx, broadcastTxHash };
+      }
+      case "NearNativeTransaction": {
+        const nearPayload = payload as NearNativeExecutionPayload;
+        if (
+          !nearPayload ||
+          typeof nearPayload !== "object" ||
+          typeof nearPayload.receiverId !== "string" ||
+          !Array.isArray(nearPayload.actions)
+        ) {
+          throw new Error(
+            `Policy ${String(id)} expects { receiverId, actions } for NearNativeTransaction.`
+          );
+        }
+        return this.proposeNearActions(
+          String(id),
+          nearPayload.receiverId,
+          nearPayload.actions,
+          params.options as NearCallOptions | undefined
+        );
+      }
+      case "KernelConfiguration": {
+        if (!(typeof payload === "string" || typeof payload === "object")) {
+          throw new Error(
+            `Policy ${String(id)} expects function args (object or string) for KernelConfiguration.`
+          );
+        }
+        return this.proposeExecution(
+          String(id),
+          payload as Record<string, unknown> | string,
+          params.options as NearCallOptions | undefined
+        );
+      }
+      case "ChainSigMessage": {
+        throw new Error(
+          `Policy ${String(
+            id
+          )} is a ChainSigMessage policy. execute() currently only supports transaction policies.`
+        );
+      }
+      default: {
+        throw new Error(`Unsupported policy type for ${String(id)}.`);
+      }
+    }
   }
 
   /**
@@ -272,14 +411,12 @@ export class DewClient {
     return { executed: false, proposalId, outcome };
   }
 
-  async proposeEvmTransaction(
+  async proposeChainSigTransaction(
     policyId: string,
-    serializedTx: string | Uint8Array,
-    options?: NearCallOptions
-  ): Promise<EvmProposalResult> {
-    const txHex =
-      typeof serializedTx === "string" ? serializedTx : Buffer.from(serializedTx).toString("hex");
-    const txData = txHex.startsWith("0x") ? txHex : `0x${txHex}`;
+    encodedTx: string | Uint8Array,
+    options?: ChainSigProposeOptions
+  ): Promise<ChainSigTransactionProposalResult> {
+    const txData = normalizeChainSigEncodedTx(encodedTx, options?.encoding);
     const outcome = await this.callKernel(
       "propose_execution",
       { policy_id: policyId, function_args: txData },
@@ -536,6 +673,41 @@ export class DewClient {
   }
 }
 
+function normalizeChainSigEncodedTx(
+  encodedTx: string | Uint8Array,
+  encoding?: "hex" | "base64"
+): string {
+  if (encodedTx instanceof Uint8Array) {
+    if (encoding === "base64") {
+      return Buffer.from(encodedTx).toString("base64");
+    }
+    const hex = Buffer.from(encodedTx).toString("hex");
+    return `0x${hex}`;
+  }
+
+  if (encoding === "base64") {
+    return encodedTx;
+  }
+
+  if (encoding === "hex") {
+    return encodedTx.startsWith("0x") ? encodedTx : `0x${encodedTx}`;
+  }
+
+  if (encodedTx.startsWith("0x")) {
+    return encodedTx;
+  }
+
+  if (isLikelyHex(encodedTx)) {
+    return `0x${encodedTx}`;
+  }
+
+  return encodedTx;
+}
+
+function isLikelyHex(value: string): boolean {
+  return /^[0-9a-fA-F]+$/.test(value) && value.length % 2 === 0;
+}
+
 /**
  * Check if a proposal was executed immediately by inspecting the transaction outcome.
  * Looks for execution events/logs in the receipts.
@@ -550,7 +722,7 @@ function wasProposalExecuted(outcome: providers.FinalExecutionOutcome): boolean 
         return true;
       }
 
-      // Check for MPC signature logs (indicates EVM tx was signed/executed)
+      // Check for MPC signature logs (indicates ChainSig tx was signed/executed)
       if (log.includes('"big_r"') || log.includes('"signature"')) {
         return true;
       }
@@ -662,6 +834,6 @@ export function extractMPCSignatures(result: providers.FinalExecutionOutcome): M
 /**
  * Create a new DewClient instance
  */
-export function createDewClient(config: DewClientConfig): DewClient {
+export function createDewClient<T extends PolicySpecMap>(config: DewClientConfig<T>) {
   return new DewClient(config);
 }
