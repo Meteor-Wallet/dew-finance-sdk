@@ -1,4 +1,12 @@
-import { createNearAccount, DewClient, type NearWallet } from "../packages/core/dist/index.js";
+import {
+  createNearAccount,
+  DewClient,
+  definePolicies,
+  type NearWallet,
+  type NearNativeExecutionPayload,
+  type NearNativePolicySpec,
+  type NearNativePolicySpecWithBuilder,
+} from "../packages/core/dist/index.js";
 import { depositToIntents, withdrawFromIntents } from "../packages/core/dist/utils/intents.js";
 
 const requiredSeeds = ["OWNER_SEED_1", "OWNER_SEED_2", "OWNER_SEED_3", "STRATEGIST_SEED"];
@@ -27,84 +35,106 @@ const wallets: NearWallet[] = await Promise.all(
   })
 );
 
+const emptyNearPayload: NearNativeExecutionPayload = {
+  receiverId: "receiver.testnet",
+  actions: [],
+};
+
+const policyWithoutBuilder = {
+  id: "near_policy",
+  description: "near_policy",
+  requiredRole: "owner",
+  requiredVoteCount: 1,
+  policyType: "NearNativeTransaction",
+  policyDetails: {
+    type: "NearNativeTransaction",
+    config: {
+      chainEnvironment: "NearWasm",
+      restrictions: [],
+    },
+  },
+  activationTime: "0",
+  proposalExpiryTimeNanosec: "0",
+  requiredPendingActions: [],
+} satisfies NearNativePolicySpec;
+
+const policyWithBuilder = {
+  id: "near_policy",
+  description: "near_policy",
+  requiredRole: "owner",
+  requiredVoteCount: 1,
+  policyType: "NearNativeTransaction",
+  policyDetails: {
+    type: "NearNativeTransaction",
+    config: {
+      chainEnvironment: "NearWasm",
+      restrictions: [],
+    },
+  },
+  activationTime: "0",
+  proposalExpiryTimeNanosec: "0",
+  requiredPendingActions: [],
+  builder: (args: { foo: string; bar: number }): NearNativeExecutionPayload => {
+    if (!args.foo) {
+      return emptyNearPayload;
+    }
+    return emptyNearPayload;
+  },
+} satisfies NearNativePolicySpecWithBuilder<[{ foo: string; bar: number }]>;
+
+const policyWithBuilder2 = {
+  id: "near_policy",
+  description: "near_policy",
+  requiredRole: "owner",
+  requiredVoteCount: 1,
+  policyType: "NearNativeTransaction",
+  policyDetails: {
+    type: "NearNativeTransaction",
+    config: {
+      chainEnvironment: "NearWasm",
+      restrictions: [],
+    },
+  },
+  activationTime: "0",
+  proposalExpiryTimeNanosec: "0",
+  requiredPendingActions: [],
+  builder: (args: { foo: string; bar: number; fizz: bigint }): NearNativeExecutionPayload => {
+    if (!args.foo) {
+      return emptyNearPayload;
+    }
+    if (args.fizz > 0n) {
+      return emptyNearPayload;
+    }
+    return emptyNearPayload;
+  },
+} satisfies NearNativePolicySpecWithBuilder<[{ foo: string; bar: number; fizz: bigint }]>;
+
+const policies = definePolicies({
+  policyWithoutBuilder,
+  policyWithBuilder,
+  policyWithBuilder2,
+});
+
 const dew = new DewClient({
   kernelId: "mock.kernel.testnet",
   nearWallet: wallets[0] as NearWallet,
-  policies: {
-    "policyWithoutBuilder": {
-      id: "near_policy",
-      description: "near_policy",
-      requiredRole: "owner",
-      requiredVoteCount: 1,
-      policyType: "NearNativeTransaction",
-      policyDetails: {
-        type: "NearNativeTransaction",
-        config: {
-          chainEnvironment: "NearWasm",
-          restrictions: [],
-        },
-      },
-      activationTime: "0",
-      proposalExpiryTimeNanosec: "0",
-      requiredPendingActions: [],
-    },
-    "policyWithBuilder": {
-      id: "near_policy",
-      description: "near_policy",
-      requiredRole: "owner",
-      requiredVoteCount: 1,
-      policyType: "NearNativeTransaction",
-      policyDetails: {
-        type: "NearNativeTransaction",
-        config: {
-          chainEnvironment: "NearWasm",
-          restrictions: [],
-        },
-      },
-      activationTime: "0",
-      proposalExpiryTimeNanosec: "0",
-      requiredPendingActions: [],
-      builder: (args: {foo: string, bar: number}) => {
-        return ""
-      }
-    },
-    "policyWithBuilder2": {
-      id: "near_policy",
-      description: "near_policy",
-      requiredRole: "owner",
-      requiredVoteCount: 1,
-      policyType: "NearNativeTransaction",
-      policyDetails: {
-        type: "NearNativeTransaction",
-        config: {
-          chainEnvironment: "NearWasm",
-          restrictions: [],
-        },
-      },
-      activationTime: "0",
-      proposalExpiryTimeNanosec: "0",
-      requiredPendingActions: [],
-      builder: (args: {foo: string, bar: number, fizz: bigint}) => {
-        return ""
-      }
-    },
-  }
+  policies,
 });
 
 dew.execute({
   id: "policyWithoutBuilder",
-  prebuilt: ""
-})
+  prebuilt: emptyNearPayload,
+});
 
 dew.execute({
   id: "policyWithBuilder",
-  args: [{foo: "bar", bar: 123}],
-})
+  args: [{ foo: "bar", bar: 123 }],
+});
 
 dew.execute({
   id: "policyWithBuilder2",
-  args: [{foo: "bar", bar: 123, fizz: BigInt(456)}],
-})
+  args: [{ foo: "bar", bar: 123, fizz: BigInt(456) }],
+});
 
 async function run() {
   // Propose + Auto Execute (1 vote required by policy)
@@ -139,8 +169,8 @@ async function run() {
   const nearTx = await dew.proposeNearActions("near_policy", "receiver.testnet", []);
   console.log("near tx executed:", nearTx.executed);
 
-  const evmTx = await dew.proposeEvmTransaction("evm_policy", "0xdead");
-  console.log("evm tx signed+broadcasted", evmTx);
+  const evmTx = await dew.proposeChainSigTransaction("evm_policy", "0xdead");
+  console.log("chain sig tx executed", evmTx);
 
   const deposit = await depositToIntents({
     client: dew,

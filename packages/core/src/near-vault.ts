@@ -17,6 +17,7 @@ import type {
   NearViewOptions,
   NearProposalResult,
   Policy,
+  PolicySpecMap,
   PolicyRestriction,
   ProtocolConfig,
   StorageBalance,
@@ -132,7 +133,7 @@ export interface DewVaultStrategistTransferProcessRedeemParams {
   callOptions?: NearCallOptions;
 }
 
-export interface DewNearVaultClientConfig<TPolicies extends Record<string, Policy>> {
+export interface DewNearVaultClientConfig<TPolicies extends PolicySpecMap> {
   /** Bound DewClient instance */
   dewClient: DewClient<TPolicies>;
   /** Dew Vault contract account ID */
@@ -373,7 +374,7 @@ export function createDewVaultStrategistTransferProcessRedeemPolicy(
   });
 }
 
-export class DewNearVaultClient<TPolicies extends Record<string, Policy>> {
+export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   private readonly dewClient: DewClient<TPolicies>;
   private readonly vaultId: string;
   private readonly policyIds: Record<DewVaultMethod, string>;
