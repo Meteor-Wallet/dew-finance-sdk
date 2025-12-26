@@ -76,111 +76,13 @@ export type DewVaultCurrentFlow = [U128String, U128String | null, number | null]
 export type DewVaultFlowWindowInfo = [number, number, number] | null;
 export type DewVaultAccountantData = Record<string, unknown>;
 
-export interface DewVaultCallOptions {
-  /** Override policy ID for this call */
-  policyId?: string;
-  /** Gas (in TGas) for the vault function call */
-  vaultGasTgas?: number;
-  /** Deposit (in yoctoNEAR) for the vault function call */
-  vaultDepositYocto?: string;
-  /** Options for the kernel proposal call */
-  callOptions?: NearCallOptions;
-}
-
-export interface DewVaultStrategistTransferParams {
-  /** NEP-141 token contract ID */
-  tokenId: string;
-  /** Amount to transfer (U128 string) */
-  amount: U128String;
-  /** Policy ID to propose under */
-  policyId: string;
-  /** Optional memo for the transfer */
-  memo?: string;
-  /** Whether this deposit is a request (defaults to false) */
-  isRequest?: boolean;
-  /** Minimum shares expected (defaults to "0") */
-  minShares?: U128String;
-  /** Optional receiver ID for standard deposits */
-  receiverId?: string;
-  /** Gas (in TGas) for ft_transfer_call */
-  gasTgas?: number;
-  /** Deposit (in yoctoNEAR) for ft_transfer_call */
-  depositYocto?: string;
-  /** Options for the kernel proposal call */
-  callOptions?: NearCallOptions;
-}
-
-export interface DewVaultStrategistTransferProcessRedeemParams {
-  /** NEP-141 token contract ID */
-  tokenId: string;
-  /** Amount to transfer (U128 string) */
-  amount: U128String;
-  /** Redeem request IDs to process */
-  requestIds: number[];
-  /** Policy ID to propose under */
-  policyId: string;
-  /** Optional memo for the transfer */
-  memo?: string;
-  /** Whether this deposit is a request (defaults to false) */
-  isRequest?: boolean;
-  /** Minimum shares expected (defaults to "0") */
-  minShares?: U128String;
-  /** Gas (in TGas) for ft_transfer_call */
-  gasTgas?: number;
-  /** Deposit (in yoctoNEAR) for ft_transfer_call */
-  depositYocto?: string;
-  /** Options for the kernel proposal call */
-  callOptions?: NearCallOptions;
-}
-
-export interface DewNearVaultClientConfig<TPolicies extends PolicySpecMap> {
-  /** Bound DewClient instance */
-  dewClient: DewClient<TPolicies>;
-  /** Dew Vault contract account ID */
-  vaultId: string;
-  /** Per-method policy ID overrides */
-  policyIds?: DewVaultPolicyIdMap;
-  /** Prefix used when generating policy IDs */
-  policyIdPrefix?: string;
-}
-
-export interface DewVaultPolicyListParams {
-  /** Dew Vault contract account ID */
-  vaultId: string;
-  /** Chain signature derivation path */
-  derivationPath: string;
-  requiredRole: string;
-  requiredVoteCount: number;
-  policyIds?: DewVaultPolicyIdMap;
-  policyIdPrefix?: string;
-  descriptionPrefix?: string;
-  chainEnvironment?: ChainEnvironment;
-  activationTime?: string;
-  proposalExpiryTimeNanosec?: string;
-  requiredPendingActions?: string[];
-}
-
-export interface DewVaultStrategistTransferPolicyParams {
-  /** Dew Vault contract account ID */
-  vaultId: string;
-  /** NEP-141 token contract ID */
-  tokenId: string;
-  /** Chain signature derivation path */
-  derivationPath: string;
-  requiredRole: string;
-  requiredVoteCount: number;
-  policyId?: string;
-  description?: string;
-  chainEnvironment?: ChainEnvironment;
-  activationTime?: string;
-  proposalExpiryTimeNanosec?: string;
-  requiredPendingActions?: string[];
-}
-
-export type DewVaultStrategistTransferProcessRedeemPolicyParams =
-  DewVaultStrategistTransferPolicyParams;
-
-function buildRestrictionSchema(predicates: string[], indent = "  "): string {
+function buildRestrictionSchema({
+  predicates,
+  indent = "  ",
+}: {
+  predicates: string[];
+  indent?: string;
+}): string {
   const lines = predicates.map((predicate) => `${indent}${predicate}`);
   return `and(\n${lines.join(",\n")}\n)`;
 }
@@ -217,21 +119,22 @@ function buildChainSigTransactionPolicy(params: {
   };
 }
 
-export function createDewVaultPolicyIdMap(
-  params: {
-    policyIds?: DewVaultPolicyIdMap;
-    policyIdPrefix?: string;
-  } = {}
-): Record<DewVaultMethod, string> {
+export function createDewVaultPolicyIdMap({
+  policyIds,
+  policyIdPrefix,
+}: {
+  policyIds?: DewVaultPolicyIdMap;
+  policyIdPrefix?: string;
+} = {}): Record<DewVaultMethod, string> {
   const map = {} as Record<DewVaultMethod, string>;
   for (const method of DEW_VAULT_METHODS) {
-    const explicit = params.policyIds?.[method];
+    const explicit = policyIds?.[method];
     if (explicit) {
       map[method] = explicit;
       continue;
     }
-    if (params.policyIdPrefix) {
-      map[method] = `${params.policyIdPrefix}${method}`;
+    if (policyIdPrefix) {
+      map[method] = `${policyIdPrefix}${method}`;
       continue;
     }
     map[method] = method;
@@ -239,21 +142,40 @@ export function createDewVaultPolicyIdMap(
   return map;
 }
 
-export function createDewVaultPolicyList(
-  params: DewVaultPolicyListParams
-): Array<[string, Policy]> {
-  const policyIds = createDewVaultPolicyIdMap({
-    policyIds: params.policyIds,
-    policyIdPrefix: params.policyIdPrefix,
-  });
-  const descriptionPrefix = params.descriptionPrefix ?? "Dew Vault policy for";
-  const chainEnvironment = params.chainEnvironment ?? "NearWasm";
-  const activationTime = params.activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME;
-  const proposalExpiryTimeNanosec = params.proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS;
-  const requiredPendingActions = params.requiredPendingActions ?? [];
+export function createDewVaultPolicyList({
+  vaultId,
+  derivationPath,
+  requiredRole,
+  requiredVoteCount,
+  policyIds,
+  policyIdPrefix,
+  descriptionPrefix,
+  chainEnvironment,
+  activationTime,
+  proposalExpiryTimeNanosec,
+  requiredPendingActions,
+}: {
+  vaultId: string;
+  derivationPath: string;
+  requiredRole: string;
+  requiredVoteCount: number;
+  policyIds?: DewVaultPolicyIdMap;
+  policyIdPrefix?: string;
+  descriptionPrefix?: string;
+  chainEnvironment?: ChainEnvironment;
+  activationTime?: string;
+  proposalExpiryTimeNanosec?: string;
+  requiredPendingActions?: string[];
+}): Array<[string, Policy]> {
+  const policyIdMap = createDewVaultPolicyIdMap({ policyIds, policyIdPrefix });
+  const resolvedDescriptionPrefix = descriptionPrefix ?? "Dew Vault policy for";
+  const resolvedChainEnvironment = chainEnvironment ?? "NearWasm";
+  const resolvedActivationTime = activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME;
+  const resolvedProposalExpiryTimeNanosec = proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS;
+  const resolvedPendingActions = requiredPendingActions ?? [];
 
   return DEW_VAULT_METHODS.map((method) => {
-    const policyId = policyIds[method];
+    const policyId = policyIdMap[method];
     const extraPredicates: string[] = [];
     if (method === "dew_vault_confirm_pending_redeems") {
       extraPredicates.push("$.args.requests.length().gte(1)");
@@ -271,106 +193,156 @@ export function createDewVaultPolicyList(
     }
     if (method === "dew_vault_asset_transfer") {
       extraPredicates.push(
-        `$.args.receiver_id.equal(chain_sig_address("${params.derivationPath}","NearWasm"))`
+        `$.args.receiver_id.equal(chain_sig_address("${derivationPath}","NearWasm"))`
       );
     }
 
     const restrictions: PolicyRestriction[] = [
       {
-        schema: buildRestrictionSchema([
-          `$.contract_id.equal("${params.vaultId}")`,
-          `$.function_name.equal("${method}")`,
-          ...extraPredicates,
-        ]),
+        schema: buildRestrictionSchema({
+          predicates: [
+            `$.contract_id.equal("${vaultId}")`,
+            `$.function_name.equal("${method}")`,
+            ...extraPredicates,
+          ],
+        }),
         interface: "",
       },
     ];
 
     const policy = buildChainSigTransactionPolicy({
       policyId,
-      description: `${descriptionPrefix} ${method}`,
-      requiredRole: params.requiredRole,
-      requiredVoteCount: params.requiredVoteCount,
-      derivationPath: params.derivationPath,
-      chainEnvironment,
+      description: `${resolvedDescriptionPrefix} ${method}`,
+      requiredRole,
+      requiredVoteCount,
+      derivationPath,
+      chainEnvironment: resolvedChainEnvironment,
       restrictions,
-      activationTime,
-      proposalExpiryTimeNanosec,
-      requiredPendingActions,
+      activationTime: resolvedActivationTime,
+      proposalExpiryTimeNanosec: resolvedProposalExpiryTimeNanosec,
+      requiredPendingActions: resolvedPendingActions,
     });
     return [policyId, policy];
   });
 }
 
-export function createDewVaultStrategistTransferPolicy(
-  params: DewVaultStrategistTransferPolicyParams
-): Policy {
-  const policyId = params.policyId ?? "dew_vault_strategist_transfer";
-  const description = params.description ?? "Deposit tokens into vault";
-  const chainEnvironment = params.chainEnvironment ?? "NearWasm";
-  const activationTime = params.activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME;
-  const proposalExpiryTimeNanosec = params.proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS;
-  const requiredPendingActions = params.requiredPendingActions ?? [];
+export function createDewVaultStrategistTransferPolicy({
+  vaultId,
+  tokenId,
+  derivationPath,
+  requiredRole,
+  requiredVoteCount,
+  policyId,
+  description,
+  chainEnvironment,
+  activationTime,
+  proposalExpiryTimeNanosec,
+  requiredPendingActions,
+}: {
+  vaultId: string;
+  tokenId: string;
+  derivationPath: string;
+  requiredRole: string;
+  requiredVoteCount: number;
+  policyId?: string;
+  description?: string;
+  chainEnvironment?: ChainEnvironment;
+  activationTime?: string;
+  proposalExpiryTimeNanosec?: string;
+  requiredPendingActions?: string[];
+}): Policy {
+  const resolvedPolicyId = policyId ?? "dew_vault_strategist_transfer";
+  const resolvedDescription = description ?? "Deposit tokens into vault";
+  const resolvedChainEnvironment = chainEnvironment ?? "NearWasm";
+  const resolvedActivationTime = activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME;
+  const resolvedProposalExpiryTimeNanosec = proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS;
+  const resolvedPendingActions = requiredPendingActions ?? [];
 
   const restrictions: PolicyRestriction[] = [
     {
-      schema: buildRestrictionSchema([
-        `$.contract_id.equal("${params.tokenId}")`,
-        `$.function_name.equal("ft_transfer_call")`,
-        `$.args.receiver_id.equal("${params.vaultId}")`,
-        `$.args.msg.json().is_strategist_transfer.equal(true)`,
-      ]),
+      schema: buildRestrictionSchema({
+        predicates: [
+          `$.contract_id.equal("${tokenId}")`,
+          `$.function_name.equal("ft_transfer_call")`,
+          `$.args.receiver_id.equal("${vaultId}")`,
+          `$.args.msg.json().is_strategist_transfer.equal(true)`,
+        ],
+      }),
       interface: "",
     },
   ];
 
   return buildChainSigTransactionPolicy({
-    policyId,
-    description,
-    requiredRole: params.requiredRole,
-    requiredVoteCount: params.requiredVoteCount,
-    derivationPath: params.derivationPath,
-    chainEnvironment,
+    policyId: resolvedPolicyId,
+    description: resolvedDescription,
+    requiredRole,
+    requiredVoteCount,
+    derivationPath,
+    chainEnvironment: resolvedChainEnvironment,
     restrictions,
-    activationTime,
-    proposalExpiryTimeNanosec,
-    requiredPendingActions,
+    activationTime: resolvedActivationTime,
+    proposalExpiryTimeNanosec: resolvedProposalExpiryTimeNanosec,
+    requiredPendingActions: resolvedPendingActions,
   });
 }
 
-export function createDewVaultStrategistTransferProcessRedeemPolicy(
-  params: DewVaultStrategistTransferProcessRedeemPolicyParams
-): Policy {
-  const policyId = params.policyId ?? "dew_vault_strategist_transfer_process_redeem";
-  const description = params.description ?? "Processes pending redeem requests";
-  const chainEnvironment = params.chainEnvironment ?? "NearWasm";
-  const activationTime = params.activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME;
-  const proposalExpiryTimeNanosec = params.proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS;
-  const requiredPendingActions = params.requiredPendingActions ?? [];
+export function createDewVaultStrategistTransferProcessRedeemPolicy({
+  vaultId,
+  tokenId,
+  derivationPath,
+  requiredRole,
+  requiredVoteCount,
+  policyId,
+  description,
+  chainEnvironment,
+  activationTime,
+  proposalExpiryTimeNanosec,
+  requiredPendingActions,
+}: {
+  vaultId: string;
+  tokenId: string;
+  derivationPath: string;
+  requiredRole: string;
+  requiredVoteCount: number;
+  policyId?: string;
+  description?: string;
+  chainEnvironment?: ChainEnvironment;
+  activationTime?: string;
+  proposalExpiryTimeNanosec?: string;
+  requiredPendingActions?: string[];
+}): Policy {
+  const resolvedPolicyId = policyId ?? "dew_vault_strategist_transfer_process_redeem";
+  const resolvedDescription = description ?? "Processes pending redeem requests";
+  const resolvedChainEnvironment = chainEnvironment ?? "NearWasm";
+  const resolvedActivationTime = activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME;
+  const resolvedProposalExpiryTimeNanosec = proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS;
+  const resolvedPendingActions = requiredPendingActions ?? [];
 
   const restrictions: PolicyRestriction[] = [
     {
-      schema: buildRestrictionSchema([
-        `$.contract_id.equal("${params.tokenId}")`,
-        `$.function_name.equal("ft_transfer_call")`,
-        `$.args.receiver_id.equal("${params.vaultId}")`,
-        `$.args.msg.json().process_redeems.length().gte(1)`,
-      ]),
+      schema: buildRestrictionSchema({
+        predicates: [
+          `$.contract_id.equal("${tokenId}")`,
+          `$.function_name.equal("ft_transfer_call")`,
+          `$.args.receiver_id.equal("${vaultId}")`,
+          `$.args.msg.json().process_redeems.length().gte(1)`,
+        ],
+      }),
       interface: "",
     },
   ];
 
   return buildChainSigTransactionPolicy({
-    policyId,
-    description,
-    requiredRole: params.requiredRole,
-    requiredVoteCount: params.requiredVoteCount,
-    derivationPath: params.derivationPath,
-    chainEnvironment,
+    policyId: resolvedPolicyId,
+    description: resolvedDescription,
+    requiredRole,
+    requiredVoteCount,
+    derivationPath,
+    chainEnvironment: resolvedChainEnvironment,
     restrictions,
-    activationTime,
-    proposalExpiryTimeNanosec,
-    requiredPendingActions,
+    activationTime: resolvedActivationTime,
+    proposalExpiryTimeNanosec: resolvedProposalExpiryTimeNanosec,
+    requiredPendingActions: resolvedPendingActions,
   });
 }
 
@@ -379,12 +351,22 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   private readonly vaultId: string;
   private readonly policyIds: Record<DewVaultMethod, string>;
 
-  constructor(config: DewNearVaultClientConfig<TPolicies>) {
-    this.dewClient = config.dewClient;
-    this.vaultId = config.vaultId;
+  constructor({
+    dewClient,
+    vaultId,
+    policyIds,
+    policyIdPrefix,
+  }: {
+    dewClient: DewClient<TPolicies>;
+    vaultId: string;
+    policyIds?: DewVaultPolicyIdMap;
+    policyIdPrefix?: string;
+  }) {
+    this.dewClient = dewClient;
+    this.vaultId = vaultId;
     this.policyIds = createDewVaultPolicyIdMap({
-      policyIds: config.policyIds,
-      policyIdPrefix: config.policyIdPrefix,
+      policyIds,
+      policyIdPrefix,
     });
   }
 
@@ -392,7 +374,13 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     return this.vaultId;
   }
 
-  private resolvePolicyId(method: DewVaultMethod, override?: string): string {
+  private resolvePolicyId({
+    method,
+    override,
+  }: {
+    method: DewVaultMethod;
+    override?: string;
+  }): string {
     if (override) {
       return override;
     }
@@ -403,11 +391,20 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     return policyId;
   }
 
-  private buildVaultFunctionCall(
-    method: DewVaultMethod,
-    args: Record<string, unknown>,
-    options?: DewVaultCallOptions
-  ): transactions.Action {
+  private buildVaultFunctionCall({
+    method,
+    args,
+    options,
+  }: {
+    method: DewVaultMethod;
+    args: Record<string, unknown>;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): transactions.Action {
     const gasTgas = options?.vaultGasTgas ?? DEFAULT_VAULT_CALL_GAS_TGAS;
     const gas = BigInt(Math.floor(gasTgas * TGAS_TO_GAS));
     const depositYocto = options?.vaultDepositYocto ?? DEFAULT_VAULT_CALL_DEPOSIT_YOCTO;
@@ -415,7 +412,14 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     return transactions.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit);
   }
 
-  private buildFtTransferCallAction(params: {
+  private buildFtTransferCallAction({
+    receiverId,
+    amount,
+    msg,
+    memo,
+    gasTgas,
+    depositYocto,
+  }: {
     receiverId: string;
     amount: U128String;
     msg: string;
@@ -423,18 +427,18 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     gasTgas?: number;
     depositYocto?: string;
   }): transactions.Action {
-    const gasTgas = params.gasTgas ?? DEFAULT_STRATEGIST_TRANSFER_GAS_TGAS;
-    const gas = BigInt(Math.floor(gasTgas * TGAS_TO_GAS));
-    const depositYocto = params.depositYocto ?? DEFAULT_STRATEGIST_TRANSFER_DEPOSIT_YOCTO;
-    const deposit = BigInt(depositYocto);
+    const resolvedGasTgas = gasTgas ?? DEFAULT_STRATEGIST_TRANSFER_GAS_TGAS;
+    const gas = BigInt(Math.floor(resolvedGasTgas * TGAS_TO_GAS));
+    const resolvedDepositYocto = depositYocto ?? DEFAULT_STRATEGIST_TRANSFER_DEPOSIT_YOCTO;
+    const deposit = BigInt(resolvedDepositYocto);
     return transactions.functionCall(
       "ft_transfer_call",
       Buffer.from(
         JSON.stringify({
-          receiver_id: params.receiverId,
-          amount: params.amount,
-          memo: params.memo ?? null,
-          msg: params.msg,
+          receiver_id: receiverId,
+          amount,
+          memo: memo ?? null,
+          msg,
         })
       ),
       gas,
@@ -442,688 +446,1432 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     );
   }
 
-  private async proposeVaultCall(
-    method: DewVaultMethod,
-    args: Record<string, unknown>,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    const policyId = this.resolvePolicyId(method, options?.policyId);
-    const action = this.buildVaultFunctionCall(method, args, options);
-    return this.dewClient.proposeNearActions(
+  private async proposeVaultCall({
+    method,
+    args,
+    options,
+  }: {
+    method: DewVaultMethod;
+    args: Record<string, unknown>;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    const policyId = this.resolvePolicyId({ method, override: options?.policyId });
+    const action = this.buildVaultFunctionCall({ method, args, options });
+    return this.dewClient.proposeNearActions({
       policyId,
-      this.vaultId,
-      [action],
-      options?.callOptions
-    );
+      receiverId: this.vaultId,
+      actions: [action],
+      options: options?.callOptions,
+    });
   }
 
-  private async viewVault<T>(
-    method: string,
-    args: Record<string, unknown>,
-    options?: NearViewOptions
-  ): Promise<T> {
-    return this.dewClient.viewFunction<T>(this.vaultId, method, args, options);
+  private async viewVault<T>({
+    method,
+    args,
+    options,
+  }: {
+    method: string;
+    args: Record<string, unknown>;
+    options?: NearViewOptions;
+  }): Promise<T> {
+    return this.dewClient.viewFunction<T>({
+      accountId: this.vaultId,
+      method,
+      args,
+      options,
+    });
   }
 
   // ---------------------------------------------------------------------------
   // Dew Vault Methods (owner-only, called via kernel policy)
   // ---------------------------------------------------------------------------
 
-  async dewVaultUpdateSharePrices(
-    rates: DewVaultSharePriceRate[],
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_update_share_prices", { rates }, options);
+  async dewVaultUpdateSharePrices({
+    rates,
+    options,
+  }: {
+    rates: DewVaultSharePriceRate[];
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_update_share_prices",
+      args: { rates },
+      options,
+    });
   }
 
-  async dewVaultUpdateConfig(
-    newConfig: VaultConfig,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_update_config", { new_config: newConfig }, options);
+  async dewVaultUpdateConfig({
+    newConfig,
+    options,
+  }: {
+    newConfig: VaultConfig;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_update_config",
+      args: { new_config: newConfig },
+      options,
+    });
   }
 
-  async dewVaultConfirmPendingRedeems(
-    requests: DewVaultOperationSharePrice[],
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_confirm_pending_redeems", { requests }, options);
+  async dewVaultConfirmPendingRedeems({
+    requests,
+    options,
+  }: {
+    requests: DewVaultOperationSharePrice[];
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_confirm_pending_redeems",
+      args: { requests },
+      options,
+    });
   }
 
-  async dewVaultProcessPendingDeposits(
-    requests: DewVaultOperationSharePrice[],
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_process_pending_deposits", { requests }, options);
+  async dewVaultProcessPendingDeposits({
+    requests,
+    options,
+  }: {
+    requests: DewVaultOperationSharePrice[];
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_process_pending_deposits",
+      args: { requests },
+      options,
+    });
   }
 
-  async dewVaultAssetTransfer(
-    asset: Asset,
-    amount: U128String,
-    receiverId: string,
-    memo?: string,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall(
-      "dew_vault_asset_transfer",
-      {
+  async dewVaultAssetTransfer({
+    asset,
+    amount,
+    receiverId,
+    memo,
+    options,
+  }: {
+    asset: Asset;
+    amount: U128String;
+    receiverId: string;
+    memo?: string;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_asset_transfer",
+      args: {
         asset,
         amount,
         receiver_id: receiverId,
         memo: memo ?? null,
       },
-      options
-    );
+      options,
+    });
   }
 
-  async dewVaultUpdateMetadata(
-    newMetadata: FungibleTokenMetadata,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall(
-      "dew_vault_update_metadata",
-      { new_metadata: newMetadata },
-      options
-    );
+  async dewVaultUpdateMetadata({
+    newMetadata,
+    options,
+  }: {
+    newMetadata: FungibleTokenMetadata;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_update_metadata",
+      args: { new_metadata: newMetadata },
+      options,
+    });
   }
 
-  async dewVaultAddToWhitelist(
-    accountId: string,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_add_to_whitelist", { account_id: accountId }, options);
+  async dewVaultAddToWhitelist({
+    accountId,
+    options,
+  }: {
+    accountId: string;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_add_to_whitelist",
+      args: { account_id: accountId },
+      options,
+    });
   }
 
-  async dewVaultRemoveFromWhitelist(
-    accountId: string,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall(
-      "dew_vault_remove_from_whitelist",
-      { account_id: accountId },
-      options
-    );
+  async dewVaultRemoveFromWhitelist({
+    accountId,
+    options,
+  }: {
+    accountId: string;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_remove_from_whitelist",
+      args: { account_id: accountId },
+      options,
+    });
   }
 
-  async dewVaultAddToBlacklist(
-    accountId: string,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_add_to_blacklist", { account_id: accountId }, options);
+  async dewVaultAddToBlacklist({
+    accountId,
+    options,
+  }: {
+    accountId: string;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_add_to_blacklist",
+      args: { account_id: accountId },
+      options,
+    });
   }
 
-  async dewVaultRemoveFromBlacklist(
-    accountId: string,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall(
-      "dew_vault_remove_from_blacklist",
-      { account_id: accountId },
-      options
-    );
+  async dewVaultRemoveFromBlacklist({
+    accountId,
+    options,
+  }: {
+    accountId: string;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_remove_from_blacklist",
+      args: { account_id: accountId },
+      options,
+    });
   }
 
-  async dewVaultEmergencyPause(options?: DewVaultCallOptions): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_emergency_pause", {}, options);
+  async dewVaultEmergencyPause({
+    options,
+  }: {
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  } = {}): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_emergency_pause",
+      args: {},
+      options,
+    });
   }
 
-  async dewVaultEmergencyUnpause(options?: DewVaultCallOptions): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_emergency_unpause", {}, options);
+  async dewVaultEmergencyUnpause({
+    options,
+  }: {
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  } = {}): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_emergency_unpause",
+      args: {},
+      options,
+    });
   }
 
-  async dewVaultRejectPendingDeposits(
-    requestIds: number[],
-    reason: string,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall(
-      "dew_vault_reject_pending_deposits",
-      { request_ids: requestIds, reason },
-      options
-    );
+  async dewVaultRejectPendingDeposits({
+    requestIds,
+    reason,
+    options,
+  }: {
+    requestIds: number[];
+    reason: string;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_reject_pending_deposits",
+      args: { request_ids: requestIds, reason },
+      options,
+    });
   }
 
-  async dewVaultRejectPendingRedeems(
-    requestIds: number[],
-    reason: string,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall(
-      "dew_vault_reject_pending_redeems",
-      { request_ids: requestIds, reason },
-      options
-    );
+  async dewVaultRejectPendingRedeems({
+    requestIds,
+    reason,
+    options,
+  }: {
+    requestIds: number[];
+    reason: string;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_reject_pending_redeems",
+      args: { request_ids: requestIds, reason },
+      options,
+    });
   }
 
-  async dewVaultForceResetFlowCap(
-    isDeposit: boolean,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall(
-      "dew_vault_force_reset_flow_cap",
-      { is_deposit: isDeposit },
-      options
-    );
+  async dewVaultForceResetFlowCap({
+    isDeposit,
+    options,
+  }: {
+    isDeposit: boolean;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_force_reset_flow_cap",
+      args: { is_deposit: isDeposit },
+      options,
+    });
   }
 
-  async dewVaultSetAssetFees(
-    asset: Asset,
-    depositFeeBps?: BasisPoints,
-    withdrawalFeeBps?: BasisPoints,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall(
-      "dew_vault_set_asset_fees",
-      {
+  async dewVaultSetAssetFees({
+    asset,
+    depositFeeBps,
+    withdrawalFeeBps,
+    options,
+  }: {
+    asset: Asset;
+    depositFeeBps?: BasisPoints;
+    withdrawalFeeBps?: BasisPoints;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_set_asset_fees",
+      args: {
         asset,
         deposit_fee_bps: depositFeeBps ?? null,
         withdrawal_fee_bps: withdrawalFeeBps ?? null,
       },
-      options
-    );
+      options,
+    });
   }
 
-  async dewVaultSetProtocolFeeCuts(
-    asset: Asset,
-    depositCutBps?: BasisPoints,
-    withdrawalCutBps?: BasisPoints,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall(
-      "dew_vault_set_protocol_fee_cuts",
-      {
+  async dewVaultSetProtocolFeeCuts({
+    asset,
+    depositCutBps,
+    withdrawalCutBps,
+    options,
+  }: {
+    asset: Asset;
+    depositCutBps?: BasisPoints;
+    withdrawalCutBps?: BasisPoints;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_set_protocol_fee_cuts",
+      args: {
         asset,
         deposit_cut_bps: depositCutBps ?? null,
         withdrawal_cut_bps: withdrawalCutBps ?? null,
       },
-      options
-    );
+      options,
+    });
   }
 
-  async dewVaultSetFeeRecipient(
-    feeRecipient: string,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall(
-      "dew_vault_set_fee_recipient",
-      { fee_recipient: feeRecipient },
-      options
-    );
+  async dewVaultSetFeeRecipient({
+    feeRecipient,
+    options,
+  }: {
+    feeRecipient: string;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_set_fee_recipient",
+      args: { fee_recipient: feeRecipient },
+      options,
+    });
   }
 
-  async dewVaultClaimFees(
-    asset: Asset,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_claim_fees", { asset }, options);
+  async dewVaultClaimFees({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_claim_fees",
+      args: { asset },
+      options,
+    });
   }
 
-  async dewVaultClaimProtocolFees(
-    asset: Asset,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_claim_protocol_fees", { asset }, options);
+  async dewVaultClaimProtocolFees({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_claim_protocol_fees",
+      args: { asset },
+      options,
+    });
   }
 
-  async dewVaultUnpauseAccountant(options?: DewVaultCallOptions): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_unpause_accountant", {}, options);
+  async dewVaultUnpauseAccountant({
+    options,
+  }: {
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  } = {}): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_unpause_accountant",
+      args: {},
+      options,
+    });
   }
 
-  async dewVaultCrystallizePerformanceFee(
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_crystallize_performance_fee", {}, options);
+  async dewVaultCrystallizePerformanceFee({
+    options,
+  }: {
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  } = {}): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_crystallize_performance_fee",
+      args: {},
+      options,
+    });
   }
 
-  async dewVaultStartVault(options?: DewVaultCallOptions): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_start_vault", {}, options);
+  async dewVaultStartVault({
+    options,
+  }: {
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  } = {}): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_start_vault",
+      args: {},
+      options,
+    });
   }
 
-  async dewVaultTransferOwnership(
-    newOwner: string,
-    options?: DewVaultCallOptions
-  ): Promise<NearProposalResult> {
-    return this.proposeVaultCall("dew_vault_transfer_ownership", { new_owner: newOwner }, options);
+  async dewVaultTransferOwnership({
+    newOwner,
+    options,
+  }: {
+    newOwner: string;
+    options?: {
+      policyId?: string;
+      vaultGasTgas?: number;
+      vaultDepositYocto?: string;
+      callOptions?: NearCallOptions;
+    };
+  }): Promise<NearProposalResult> {
+    return this.proposeVaultCall({
+      method: "dew_vault_transfer_ownership",
+      args: { new_owner: newOwner },
+      options,
+    });
   }
 
   // ---------------------------------------------------------------------------
   // Strategist transfer helpers (ft_transfer_call into the vault)
   // ---------------------------------------------------------------------------
 
-  async dewVaultStrategistTransfer(
-    params: DewVaultStrategistTransferParams
-  ): Promise<NearProposalResult> {
+  async dewVaultStrategistTransfer({
+    tokenId,
+    amount,
+    policyId,
+    memo,
+    isRequest,
+    minShares,
+    receiverId,
+    gasTgas,
+    depositYocto,
+    callOptions,
+  }: {
+    tokenId: string;
+    amount: U128String;
+    policyId: string;
+    memo?: string;
+    isRequest?: boolean;
+    minShares?: U128String;
+    receiverId?: string;
+    gasTgas?: number;
+    depositYocto?: string;
+    callOptions?: NearCallOptions;
+  }): Promise<NearProposalResult> {
     const msg = JSON.stringify({
-      is_request: params.isRequest ?? false,
-      min_shares: params.minShares ?? "0",
+      is_request: isRequest ?? false,
+      min_shares: minShares ?? "0",
       is_strategist_transfer: true,
-      ...(params.receiverId ? { receiver_id: params.receiverId } : {}),
+      ...(receiverId ? { receiver_id: receiverId } : {}),
     });
 
     const action = this.buildFtTransferCallAction({
       receiverId: this.vaultId,
-      amount: params.amount,
+      amount,
       msg,
-      memo: params.memo,
-      gasTgas: params.gasTgas,
-      depositYocto: params.depositYocto,
+      memo,
+      gasTgas,
+      depositYocto,
     });
 
-    return this.dewClient.proposeNearActions(
-      params.policyId,
-      params.tokenId,
-      [action],
-      params.callOptions
-    );
+    return this.dewClient.proposeNearActions({
+      policyId,
+      receiverId: tokenId,
+      actions: [action],
+      options: callOptions,
+    });
   }
 
-  async dewVaultStrategistTransferProcessRedeem(
-    params: DewVaultStrategistTransferProcessRedeemParams
-  ): Promise<NearProposalResult> {
+  async dewVaultStrategistTransferProcessRedeem({
+    tokenId,
+    amount,
+    requestIds,
+    policyId,
+    memo,
+    isRequest,
+    minShares,
+    gasTgas,
+    depositYocto,
+    callOptions,
+  }: {
+    tokenId: string;
+    amount: U128String;
+    requestIds: number[];
+    policyId: string;
+    memo?: string;
+    isRequest?: boolean;
+    minShares?: U128String;
+    gasTgas?: number;
+    depositYocto?: string;
+    callOptions?: NearCallOptions;
+  }): Promise<NearProposalResult> {
     const msg = JSON.stringify({
-      is_request: params.isRequest ?? false,
-      min_shares: params.minShares ?? "0",
-      process_redeems: params.requestIds,
+      is_request: isRequest ?? false,
+      min_shares: minShares ?? "0",
+      process_redeems: requestIds,
     });
 
     const action = this.buildFtTransferCallAction({
       receiverId: this.vaultId,
-      amount: params.amount,
+      amount,
       msg,
-      memo: params.memo,
-      gasTgas: params.gasTgas,
-      depositYocto: params.depositYocto,
+      memo,
+      gasTgas,
+      depositYocto,
     });
 
-    return this.dewClient.proposeNearActions(
-      params.policyId,
-      params.tokenId,
-      [action],
-      params.callOptions
-    );
+    return this.dewClient.proposeNearActions({
+      policyId,
+      receiverId: tokenId,
+      actions: [action],
+      options: callOptions,
+    });
   }
 
   // ---------------------------------------------------------------------------
   // Dew Vault View Methods
   // ---------------------------------------------------------------------------
 
-  async getMetadata(options?: NearViewOptions): Promise<FungibleTokenMetadata> {
-    return this.viewVault("get_metadata", {}, options);
-  }
-
-  async getOwnerAccountId(options?: NearViewOptions): Promise<string> {
-    return this.viewVault("get_owner_account_id", {}, options);
-  }
-
-  async isVaultLive(options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("is_vault_live", {}, options);
-  }
-
-  async getLiveAt(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_live_at", {}, options);
-  }
-
-  async getAcceptedDepositAssets(options?: NearViewOptions): Promise<Asset[]> {
-    return this.viewVault("get_accepted_deposit_assets", {}, options);
-  }
-
-  async getAvailableRedeemAssets(options?: NearViewOptions): Promise<Asset[]> {
-    return this.viewVault("get_available_redeem_assets", {}, options);
-  }
-
-  async getAssetUnion(options?: NearViewOptions): Promise<Asset[]> {
-    return this.viewVault("get_asset_union", {}, options);
-  }
-
-  async getVaultConfig(options?: NearViewOptions): Promise<VaultConfig> {
-    return this.viewVault("get_vault_config", {}, options);
-  }
-
-  async getBaseAsset(options?: NearViewOptions): Promise<Asset> {
-    return this.viewVault("get_base_asset", {}, options);
-  }
-
-  async getProtocolConfig(options?: NearViewOptions): Promise<ProtocolConfig> {
-    return this.viewVault("get_protocol_config", {}, options);
-  }
-
-  async getAllPendingDeposits(options?: NearViewOptions): Promise<DepositWithId[]> {
-    return this.viewVault("get_all_pending_deposits", {}, options);
-  }
-
-  async getAllPendingRedeems(options?: NearViewOptions): Promise<WithdrawWithId[]> {
-    return this.viewVault("get_all_pending_redeems", {}, options);
-  }
-
-  async getAccountPendingRedeems(
-    accountId: string,
-    options?: NearViewOptions
-  ): Promise<TellerOperationWithId[]> {
-    return this.viewVault("get_account_pending_redeems", { account_id: accountId }, options);
-  }
-
-  async getAccountantData(
-    assets: Asset[],
-    options?: NearViewOptions
-  ): Promise<DewVaultAccountantData> {
-    return this.viewVault("get_accountant_data", { assets }, options);
-  }
-
-  async getTotalConfirmedPendingRedeemAssets(
-    options?: NearViewOptions
-  ): Promise<DewVaultAssetAmountList> {
-    return this.viewVault("get_total_confirmed_pending_redeem_assets", {}, options);
-  }
-
-  async getTotalUnconfirmedPendingRedeemShares(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_total_unconfirmed_pending_redeem_shares", {}, options);
-  }
-
-  async getSharePriceInAsset(asset: Asset, options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_share_price_in_asset", { asset }, options);
-  }
-
-  async getAssetBalance(asset: Asset, options?: NearViewOptions): Promise<VaultBalance> {
-    return this.viewVault("get_asset_balance", { asset }, options);
-  }
-
-  async isAssetAcceptedForDeposit(asset: Asset, options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("is_asset_accepted_for_deposit", { asset }, options);
-  }
-
-  async isAssetAvailableForRedeem(asset: Asset, options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("is_asset_available_for_redeem", { asset }, options);
-  }
-
-  async getSharePriceScale(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_share_price_scale", {}, options);
-  }
-
-  async getExtraDecimalScale(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_extra_decimal_scale", {}, options);
-  }
-
-  async getTvlInBaseAsset(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_tvl_in_base_asset", {}, options);
-  }
-
-  async getTvlCapacityRemaining(options?: NearViewOptions): Promise<U128String | null> {
-    return this.viewVault("get_tvl_capacity_remaining", {}, options);
-  }
-
-  async convertToShares(
-    asset: Asset,
-    assetAmount: U128String,
-    options?: NearViewOptions
-  ): Promise<U128String> {
-    return this.viewVault("convert_to_shares", { asset, asset_amount: assetAmount }, options);
-  }
-
-  async convertToAssetAmount(
-    asset: Asset,
-    shares: U128String,
-    options?: NearViewOptions
-  ): Promise<U128String> {
-    return this.viewVault("convert_to_asset_amount", { asset, shares }, options);
-  }
-
-  async getVaultBalance(asset: Asset, options?: NearViewOptions): Promise<VaultBalance> {
-    return this.viewVault("get_vault_balance", { asset }, options);
-  }
-
-  async previewDepositShares(
-    asset: Asset,
-    depositAmount: U128String,
-    options?: NearViewOptions
-  ): Promise<U128String> {
-    return this.viewVault(
-      "preview_deposit_shares",
-      { asset, deposit_amount: depositAmount },
-      options
-    );
-  }
-
-  async previewRedeemAssetAmount(
-    asset: Asset,
-    shares: U128String,
-    options?: NearViewOptions
-  ): Promise<U128String> {
-    return this.viewVault("preview_redeem_asset_amount", { asset, shares }, options);
-  }
-
-  async maxRedeemShares(ownerId: string, options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("max_redeem_shares", { owner_id: ownerId }, options);
-  }
-
-  async maxDepositAmount(asset: Asset, options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("max_deposit_amount", { asset }, options);
-  }
-
-  async getUnconfirmedWithdraws(options?: NearViewOptions): Promise<WithdrawWithId[]> {
-    return this.viewVault("get_unconfirmed_withdraws", {}, options);
-  }
-
-  async getConfirmedWithdraws(options?: NearViewOptions): Promise<WithdrawWithId[]> {
-    return this.viewVault("get_confirmed_withdraws", {}, options);
-  }
-
-  async isWithdrawConfirmed(operationId: number, options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("is_withdraw_confirmed", { operation_id: operationId }, options);
-  }
-
-  async getConfirmedSharePrice(
-    operationId: number,
-    options?: NearViewOptions
-  ): Promise<U128String | null> {
-    return this.viewVault("get_confirmed_share_price", { operation_id: operationId }, options);
-  }
-
-  async getWithdrawInfo(operationId: number, options?: NearViewOptions): Promise<Withdraw | null> {
-    return this.viewVault("get_withdraw_info", { operation_id: operationId }, options);
-  }
-
-  async getDepositInfo(operationId: number, options?: NearViewOptions): Promise<Deposit | null> {
-    return this.viewVault("get_deposit_info", { operation_id: operationId }, options);
-  }
-
-  async isEmergencyPaused(options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("is_emergency_paused", {}, options);
-  }
-
-  async getDepositFeeByAsset(asset: Asset, options?: NearViewOptions): Promise<BasisPoints> {
-    return this.viewVault("get_deposit_fee_by_asset", { asset }, options);
-  }
-
-  async getWithdrawalFeeByAsset(asset: Asset, options?: NearViewOptions): Promise<BasisPoints> {
-    return this.viewVault("get_withdrawal_fee_by_asset", { asset }, options);
-  }
-
-  async getProtocolDepositFeeCut(asset: Asset, options?: NearViewOptions): Promise<BasisPoints> {
-    return this.viewVault("get_protocol_deposit_fee_cut", { asset }, options);
-  }
-
-  async getProtocolWithdrawalFeeCut(asset: Asset, options?: NearViewOptions): Promise<BasisPoints> {
-    return this.viewVault("get_protocol_withdrawal_fee_cut", { asset }, options);
-  }
-
-  async getFeesOwedForAsset(asset: Asset, options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_fees_owed_for_asset", { asset }, options);
-  }
-
-  async getAllFeesOwed(options?: NearViewOptions): Promise<DewVaultAssetAmountList> {
-    return this.viewVault("get_all_fees_owed", {}, options);
-  }
-
-  async getProtocolFeesOwedForAsset(asset: Asset, options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_protocol_fees_owed_for_asset", { asset }, options);
-  }
-
-  async getAllProtocolFeesOwed(options?: NearViewOptions): Promise<DewVaultAssetAmountList> {
-    return this.viewVault("get_all_protocol_fees_owed", {}, options);
-  }
-
-  async getFeeRecipient(options?: NearViewOptions): Promise<string> {
-    return this.viewVault("get_fee_recipient", {}, options);
-  }
-
-  async getProtocolAccount(options?: NearViewOptions): Promise<string> {
-    return this.viewVault("get_protocol_account", {}, options);
-  }
-
-  async getLastSharePriceUpdate(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_last_share_price_update", {}, options);
-  }
-
-  async isWhitelistEnabled(options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("is_whitelist_enabled", {}, options);
-  }
-
-  async isBlacklistEnabled(options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("is_blacklist_enabled", {}, options);
-  }
-
-  async isWhitelisted(accountId: string, options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("is_whitelisted", { account_id: accountId }, options);
-  }
-
-  async isBlacklisted(accountId: string, options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("is_blacklisted", { account_id: accountId }, options);
-  }
-
-  async getDepositFlowAccumulated(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_deposit_flow_accumulated", {}, options);
-  }
-
-  async getDepositFlowWindowStart(options?: NearViewOptions): Promise<number> {
-    return this.viewVault("get_deposit_flow_window_start", {}, options);
-  }
-
-  async getWithdrawalFlowAccumulated(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_withdrawal_flow_accumulated", {}, options);
-  }
-
-  async getWithdrawalFlowWindowStart(options?: NearViewOptions): Promise<number> {
-    return this.viewVault("get_withdrawal_flow_window_start", {}, options);
-  }
-
-  async getClaimableAssetAmount(
-    accountId: string,
-    asset: Asset,
-    options?: NearViewOptions
-  ): Promise<U128String> {
-    return this.viewVault("get_claimable_asset_amount", { account_id: accountId, asset }, options);
-  }
-
-  async getAllClaimableAssetAmounts(
-    accountId: string,
-    options?: NearViewOptions
-  ): Promise<DewVaultAssetAmountList> {
-    return this.viewVault("get_all_claimable_asset_amounts", { account_id: accountId }, options);
-  }
-
-  async getAllSharePrices(options?: NearViewOptions): Promise<DewVaultSharePriceList> {
-    return this.viewVault("get_all_share_prices", {}, options);
-  }
-
-  async getPreviousSharePriceUpdateTimestamp(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_previous_share_price_update_timestamp", {}, options);
-  }
-
-  async getTotalShares(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_total_shares", {}, options);
-  }
-
-  async getTimeSinceLastRateUpdate(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_time_since_last_rate_update", {}, options);
-  }
-
-  async isAccountantPaused(options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("is_accountant_paused", {}, options);
-  }
-
-  async getCrystallizationInfo(options?: NearViewOptions): Promise<DewVaultCrystallizationInfo> {
-    return this.viewVault("get_crystallization_info", {}, options);
-  }
-
-  async isCrystallizationDue(options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("is_crystallization_due", {}, options);
-  }
-
-  async getHighwatermarkRate(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_highwatermark_rate", {}, options);
-  }
-
-  async getCurrentManagementFeePreview(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_current_management_fee_preview", {}, options);
-  }
-
-  async getCurrentPerformanceFeePreview(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("get_current_performance_fee_preview", {}, options);
-  }
-
-  async hasAnyFeesOwed(options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("has_any_fees_owed", {}, options);
-  }
-
-  async getCurrentDepositFlow(options?: NearViewOptions): Promise<DewVaultCurrentFlow> {
-    return this.viewVault("get_current_deposit_flow", {}, options);
-  }
-
-  async getCurrentWithdrawalFlow(options?: NearViewOptions): Promise<DewVaultCurrentFlow> {
-    return this.viewVault("get_current_withdrawal_flow", {}, options);
-  }
-
-  async getFlowWindowInfo(
-    isDeposit: boolean,
-    options?: NearViewOptions
-  ): Promise<DewVaultFlowWindowInfo> {
-    return this.viewVault("get_flow_window_info", { is_deposit: isDeposit }, options);
-  }
-
-  async protocolGetManagementFeeCut(options?: NearViewOptions): Promise<BasisPoints> {
-    return this.viewVault("protocol_get_management_fee_cut", {}, options);
-  }
-
-  async protocolGetPerformanceFeeCut(options?: NearViewOptions): Promise<BasisPoints> {
-    return this.viewVault("protocol_get_performance_fee_cut", {}, options);
-  }
-
-  async protocolGetFeeRecipient(options?: NearViewOptions): Promise<string> {
-    return this.viewVault("protocol_get_fee_recipient", {}, options);
-  }
-
-  async protocolGetConfig(options?: NearViewOptions): Promise<ProtocolConfig> {
-    return this.viewVault("protocol_get_config", {}, options);
-  }
-
-  async protocolGetFeeSummary(options?: NearViewOptions): Promise<Record<string, unknown>> {
-    return this.viewVault("protocol_get_fee_summary", {}, options);
-  }
-
-  async protocolHasFeeConfiguration(options?: NearViewOptions): Promise<boolean> {
-    return this.viewVault("protocol_has_fee_configuration", {}, options);
-  }
-
-  async ftTotalSupply(options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("ft_total_supply", {}, options);
-  }
-
-  async ftBalanceOf(accountId: string, options?: NearViewOptions): Promise<U128String> {
-    return this.viewVault("ft_balance_of", { account_id: accountId }, options);
-  }
-
-  async ftMetadata(options?: NearViewOptions): Promise<FungibleTokenMetadata> {
-    return this.viewVault("ft_metadata", {}, options);
-  }
-
-  async storageBalanceBounds(options?: NearViewOptions): Promise<StorageBalanceBounds> {
-    return this.viewVault("storage_balance_bounds", {}, options);
-  }
-
-  async storageBalanceOf(
-    accountId: string,
-    options?: NearViewOptions
-  ): Promise<StorageBalance | null> {
-    return this.viewVault("storage_balance_of", { account_id: accountId }, options);
+  async getMetadata({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<FungibleTokenMetadata> {
+    return this.viewVault({ method: "get_metadata", args: {}, options });
+  }
+
+  async getOwnerAccountId({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<string> {
+    return this.viewVault({ method: "get_owner_account_id", args: {}, options });
+  }
+
+  async isVaultLive({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<boolean> {
+    return this.viewVault({ method: "is_vault_live", args: {}, options });
+  }
+
+  async getLiveAt({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_live_at", args: {}, options });
+  }
+
+  async getAcceptedDepositAssets({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<Asset[]> {
+    return this.viewVault({ method: "get_accepted_deposit_assets", args: {}, options });
+  }
+
+  async getAvailableRedeemAssets({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<Asset[]> {
+    return this.viewVault({ method: "get_available_redeem_assets", args: {}, options });
+  }
+
+  async getAssetUnion({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<Asset[]> {
+    return this.viewVault({ method: "get_asset_union", args: {}, options });
+  }
+
+  async getVaultConfig({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<VaultConfig> {
+    return this.viewVault({ method: "get_vault_config", args: {}, options });
+  }
+
+  async getBaseAsset({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<Asset> {
+    return this.viewVault({ method: "get_base_asset", args: {}, options });
+  }
+
+  async getProtocolConfig({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<ProtocolConfig> {
+    return this.viewVault({ method: "get_protocol_config", args: {}, options });
+  }
+
+  async getAllPendingDeposits({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<DepositWithId[]> {
+    return this.viewVault({ method: "get_all_pending_deposits", args: {}, options });
+  }
+
+  async getAllPendingRedeems({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<WithdrawWithId[]> {
+    return this.viewVault({ method: "get_all_pending_redeems", args: {}, options });
+  }
+
+  async getAccountPendingRedeems({
+    accountId,
+    options,
+  }: {
+    accountId: string;
+    options?: NearViewOptions;
+  }): Promise<TellerOperationWithId[]> {
+    return this.viewVault({
+      method: "get_account_pending_redeems",
+      args: { account_id: accountId },
+      options,
+    });
+  }
+
+  async getAccountantData({
+    assets,
+    options,
+  }: {
+    assets: Asset[];
+    options?: NearViewOptions;
+  }): Promise<DewVaultAccountantData> {
+    return this.viewVault({ method: "get_accountant_data", args: { assets }, options });
+  }
+
+  async getTotalConfirmedPendingRedeemAssets({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<DewVaultAssetAmountList> {
+    return this.viewVault({
+      method: "get_total_confirmed_pending_redeem_assets",
+      args: {},
+      options,
+    });
+  }
+
+  async getTotalUnconfirmedPendingRedeemShares({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({
+      method: "get_total_unconfirmed_pending_redeem_shares",
+      args: {},
+      options,
+    });
+  }
+
+  async getSharePriceInAsset({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<U128String> {
+    return this.viewVault({ method: "get_share_price_in_asset", args: { asset }, options });
+  }
+
+  async getAssetBalance({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<VaultBalance> {
+    return this.viewVault({ method: "get_asset_balance", args: { asset }, options });
+  }
+
+  async isAssetAcceptedForDeposit({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<boolean> {
+    return this.viewVault({ method: "is_asset_accepted_for_deposit", args: { asset }, options });
+  }
+
+  async isAssetAvailableForRedeem({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<boolean> {
+    return this.viewVault({ method: "is_asset_available_for_redeem", args: { asset }, options });
+  }
+
+  async getSharePriceScale({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_share_price_scale", args: {}, options });
+  }
+
+  async getExtraDecimalScale({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_extra_decimal_scale", args: {}, options });
+  }
+
+  async getTvlInBaseAsset({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_tvl_in_base_asset", args: {}, options });
+  }
+
+  async getTvlCapacityRemaining({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String | null> {
+    return this.viewVault({ method: "get_tvl_capacity_remaining", args: {}, options });
+  }
+
+  async convertToShares({
+    asset,
+    assetAmount,
+    options,
+  }: {
+    asset: Asset;
+    assetAmount: U128String;
+    options?: NearViewOptions;
+  }): Promise<U128String> {
+    return this.viewVault({
+      method: "convert_to_shares",
+      args: { asset, asset_amount: assetAmount },
+      options,
+    });
+  }
+
+  async convertToAssetAmount({
+    asset,
+    shares,
+    options,
+  }: {
+    asset: Asset;
+    shares: U128String;
+    options?: NearViewOptions;
+  }): Promise<U128String> {
+    return this.viewVault({ method: "convert_to_asset_amount", args: { asset, shares }, options });
+  }
+
+  async getVaultBalance({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<VaultBalance> {
+    return this.viewVault({ method: "get_vault_balance", args: { asset }, options });
+  }
+
+  async previewDepositShares({
+    asset,
+    depositAmount,
+    options,
+  }: {
+    asset: Asset;
+    depositAmount: U128String;
+    options?: NearViewOptions;
+  }): Promise<U128String> {
+    return this.viewVault({
+      method: "preview_deposit_shares",
+      args: { asset, deposit_amount: depositAmount },
+      options,
+    });
+  }
+
+  async previewRedeemAssetAmount({
+    asset,
+    shares,
+    options,
+  }: {
+    asset: Asset;
+    shares: U128String;
+    options?: NearViewOptions;
+  }): Promise<U128String> {
+    return this.viewVault({
+      method: "preview_redeem_asset_amount",
+      args: { asset, shares },
+      options,
+    });
+  }
+
+  async maxRedeemShares({
+    ownerId,
+    options,
+  }: {
+    ownerId: string;
+    options?: NearViewOptions;
+  }): Promise<U128String> {
+    return this.viewVault({ method: "max_redeem_shares", args: { owner_id: ownerId }, options });
+  }
+
+  async maxDepositAmount({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<U128String> {
+    return this.viewVault({ method: "max_deposit_amount", args: { asset }, options });
+  }
+
+  async getUnconfirmedWithdraws({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<WithdrawWithId[]> {
+    return this.viewVault({ method: "get_unconfirmed_withdraws", args: {}, options });
+  }
+
+  async getConfirmedWithdraws({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<WithdrawWithId[]> {
+    return this.viewVault({ method: "get_confirmed_withdraws", args: {}, options });
+  }
+
+  async isWithdrawConfirmed({
+    operationId,
+    options,
+  }: {
+    operationId: number;
+    options?: NearViewOptions;
+  }): Promise<boolean> {
+    return this.viewVault({
+      method: "is_withdraw_confirmed",
+      args: { operation_id: operationId },
+      options,
+    });
+  }
+
+  async getConfirmedSharePrice({
+    operationId,
+    options,
+  }: {
+    operationId: number;
+    options?: NearViewOptions;
+  }): Promise<U128String | null> {
+    return this.viewVault({
+      method: "get_confirmed_share_price",
+      args: { operation_id: operationId },
+      options,
+    });
+  }
+
+  async getWithdrawInfo({
+    operationId,
+    options,
+  }: {
+    operationId: number;
+    options?: NearViewOptions;
+  }): Promise<Withdraw | null> {
+    return this.viewVault({
+      method: "get_withdraw_info",
+      args: { operation_id: operationId },
+      options,
+    });
+  }
+
+  async getDepositInfo({
+    operationId,
+    options,
+  }: {
+    operationId: number;
+    options?: NearViewOptions;
+  }): Promise<Deposit | null> {
+    return this.viewVault({
+      method: "get_deposit_info",
+      args: { operation_id: operationId },
+      options,
+    });
+  }
+
+  async isEmergencyPaused({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<boolean> {
+    return this.viewVault({ method: "is_emergency_paused", args: {}, options });
+  }
+
+  async getDepositFeeByAsset({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<BasisPoints> {
+    return this.viewVault({ method: "get_deposit_fee_by_asset", args: { asset }, options });
+  }
+
+  async getWithdrawalFeeByAsset({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<BasisPoints> {
+    return this.viewVault({ method: "get_withdrawal_fee_by_asset", args: { asset }, options });
+  }
+
+  async getProtocolDepositFeeCut({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<BasisPoints> {
+    return this.viewVault({ method: "get_protocol_deposit_fee_cut", args: { asset }, options });
+  }
+
+  async getProtocolWithdrawalFeeCut({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<BasisPoints> {
+    return this.viewVault({
+      method: "get_protocol_withdrawal_fee_cut",
+      args: { asset },
+      options,
+    });
+  }
+
+  async getFeesOwedForAsset({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<U128String> {
+    return this.viewVault({ method: "get_fees_owed_for_asset", args: { asset }, options });
+  }
+
+  async getAllFeesOwed({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<DewVaultAssetAmountList> {
+    return this.viewVault({ method: "get_all_fees_owed", args: {}, options });
+  }
+
+  async getProtocolFeesOwedForAsset({
+    asset,
+    options,
+  }: {
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<U128String> {
+    return this.viewVault({ method: "get_protocol_fees_owed_for_asset", args: { asset }, options });
+  }
+
+  async getAllProtocolFeesOwed({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<DewVaultAssetAmountList> {
+    return this.viewVault({ method: "get_all_protocol_fees_owed", args: {}, options });
+  }
+
+  async getFeeRecipient({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<string> {
+    return this.viewVault({ method: "get_fee_recipient", args: {}, options });
+  }
+
+  async getProtocolAccount({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<string> {
+    return this.viewVault({ method: "get_protocol_account", args: {}, options });
+  }
+
+  async getLastSharePriceUpdate({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_last_share_price_update", args: {}, options });
+  }
+
+  async isWhitelistEnabled({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<boolean> {
+    return this.viewVault({ method: "is_whitelist_enabled", args: {}, options });
+  }
+
+  async isBlacklistEnabled({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<boolean> {
+    return this.viewVault({ method: "is_blacklist_enabled", args: {}, options });
+  }
+
+  async isWhitelisted({
+    accountId,
+    options,
+  }: {
+    accountId: string;
+    options?: NearViewOptions;
+  }): Promise<boolean> {
+    return this.viewVault({ method: "is_whitelisted", args: { account_id: accountId }, options });
+  }
+
+  async isBlacklisted({
+    accountId,
+    options,
+  }: {
+    accountId: string;
+    options?: NearViewOptions;
+  }): Promise<boolean> {
+    return this.viewVault({ method: "is_blacklisted", args: { account_id: accountId }, options });
+  }
+
+  async getDepositFlowAccumulated({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_deposit_flow_accumulated", args: {}, options });
+  }
+
+  async getDepositFlowWindowStart({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<number> {
+    return this.viewVault({ method: "get_deposit_flow_window_start", args: {}, options });
+  }
+
+  async getWithdrawalFlowAccumulated({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_withdrawal_flow_accumulated", args: {}, options });
+  }
+
+  async getWithdrawalFlowWindowStart({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<number> {
+    return this.viewVault({ method: "get_withdrawal_flow_window_start", args: {}, options });
+  }
+
+  async getClaimableAssetAmount({
+    accountId,
+    asset,
+    options,
+  }: {
+    accountId: string;
+    asset: Asset;
+    options?: NearViewOptions;
+  }): Promise<U128String> {
+    return this.viewVault({
+      method: "get_claimable_asset_amount",
+      args: { account_id: accountId, asset },
+      options,
+    });
+  }
+
+  async getAllClaimableAssetAmounts({
+    accountId,
+    options,
+  }: {
+    accountId: string;
+    options?: NearViewOptions;
+  }): Promise<DewVaultAssetAmountList> {
+    return this.viewVault({
+      method: "get_all_claimable_asset_amounts",
+      args: { account_id: accountId },
+      options,
+    });
+  }
+
+  async getAllSharePrices({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<DewVaultSharePriceList> {
+    return this.viewVault({ method: "get_all_share_prices", args: {}, options });
+  }
+
+  async getPreviousSharePriceUpdateTimestamp({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({
+      method: "get_previous_share_price_update_timestamp",
+      args: {},
+      options,
+    });
+  }
+
+  async getTotalShares({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_total_shares", args: {}, options });
+  }
+
+  async getTimeSinceLastRateUpdate({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_time_since_last_rate_update", args: {}, options });
+  }
+
+  async isAccountantPaused({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<boolean> {
+    return this.viewVault({ method: "is_accountant_paused", args: {}, options });
+  }
+
+  async getCrystallizationInfo({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<DewVaultCrystallizationInfo> {
+    return this.viewVault({ method: "get_crystallization_info", args: {}, options });
+  }
+
+  async isCrystallizationDue({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<boolean> {
+    return this.viewVault({ method: "is_crystallization_due", args: {}, options });
+  }
+
+  async getHighwatermarkRate({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_highwatermark_rate", args: {}, options });
+  }
+
+  async getCurrentManagementFeePreview({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_current_management_fee_preview", args: {}, options });
+  }
+
+  async getCurrentPerformanceFeePreview({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "get_current_performance_fee_preview", args: {}, options });
+  }
+
+  async hasAnyFeesOwed({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<boolean> {
+    return this.viewVault({ method: "has_any_fees_owed", args: {}, options });
+  }
+
+  async getCurrentDepositFlow({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<DewVaultCurrentFlow> {
+    return this.viewVault({ method: "get_current_deposit_flow", args: {}, options });
+  }
+
+  async getCurrentWithdrawalFlow({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<DewVaultCurrentFlow> {
+    return this.viewVault({ method: "get_current_withdrawal_flow", args: {}, options });
+  }
+
+  async getFlowWindowInfo({
+    isDeposit,
+    options,
+  }: {
+    isDeposit: boolean;
+    options?: NearViewOptions;
+  }): Promise<DewVaultFlowWindowInfo> {
+    return this.viewVault({
+      method: "get_flow_window_info",
+      args: { is_deposit: isDeposit },
+      options,
+    });
+  }
+
+  async protocolGetManagementFeeCut({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<BasisPoints> {
+    return this.viewVault({ method: "protocol_get_management_fee_cut", args: {}, options });
+  }
+
+  async protocolGetPerformanceFeeCut({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<BasisPoints> {
+    return this.viewVault({ method: "protocol_get_performance_fee_cut", args: {}, options });
+  }
+
+  async protocolGetFeeRecipient({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<string> {
+    return this.viewVault({ method: "protocol_get_fee_recipient", args: {}, options });
+  }
+
+  async protocolGetConfig({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<ProtocolConfig> {
+    return this.viewVault({ method: "protocol_get_config", args: {}, options });
+  }
+
+  async protocolGetFeeSummary({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<Record<string, unknown>> {
+    return this.viewVault({ method: "protocol_get_fee_summary", args: {}, options });
+  }
+
+  async protocolHasFeeConfiguration({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<boolean> {
+    return this.viewVault({ method: "protocol_has_fee_configuration", args: {}, options });
+  }
+
+  async ftTotalSupply({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<U128String> {
+    return this.viewVault({ method: "ft_total_supply", args: {}, options });
+  }
+
+  async ftBalanceOf({
+    accountId,
+    options,
+  }: {
+    accountId: string;
+    options?: NearViewOptions;
+  }): Promise<U128String> {
+    return this.viewVault({ method: "ft_balance_of", args: { account_id: accountId }, options });
+  }
+
+  async ftMetadata({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<FungibleTokenMetadata> {
+    return this.viewVault({ method: "ft_metadata", args: {}, options });
+  }
+
+  async storageBalanceBounds({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<StorageBalanceBounds> {
+    return this.viewVault({ method: "storage_balance_bounds", args: {}, options });
+  }
+
+  async storageBalanceOf({
+    accountId,
+    options,
+  }: {
+    accountId: string;
+    options?: NearViewOptions;
+  }): Promise<StorageBalance | null> {
+    return this.viewVault({
+      method: "storage_balance_of",
+      args: { account_id: accountId },
+      options,
+    });
   }
 }

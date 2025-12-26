@@ -3,36 +3,6 @@
  * @packageDocumentation
  */
 
-/** Options for Wait.for */
-export interface WaitForOptions<T> {
-  /** Condition function that returns true when waiting should stop */
-  condition: () => T | Promise<T>;
-  /** Polling interval in milliseconds */
-  interval?: number;
-  /** Maximum time to wait in milliseconds */
-  timeout?: number;
-  /** Optional message for timeout error */
-  timeoutMessage?: string;
-}
-
-/** Options for Wait.poll */
-export interface WaitPollOptions<T, R = T> {
-  /** Function to fetch the latest state */
-  fetch: () => Promise<T>;
-  /** Condition to check if we should stop polling */
-  until: (value: T) => boolean;
-  /** Polling interval in milliseconds */
-  interval?: number;
-  /** Maximum time to wait in milliseconds */
-  timeout?: number;
-  /** Optional transform function for the result */
-  transform?: (value: T) => R;
-  /** Optional message for timeout error */
-  timeoutMessage?: string;
-  /** Callback on each poll iteration */
-  onPoll?: (value: T, elapsed: number) => void;
-}
-
 /**
  * Wait utility for async operations
  */
@@ -41,7 +11,7 @@ export const Wait = {
    * Sleep for a specified duration
    * @param ms - Duration in milliseconds
    */
-  sleep(ms: number): Promise<void> {
+  sleep({ ms }: { ms: number }): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   },
 
@@ -49,28 +19,28 @@ export const Wait = {
    * Sleep for a specified number of seconds
    * @param s - Duration in seconds
    */
-  seconds(s: number): Promise<void> {
-    return Wait.sleep(s * 1000);
+  seconds({ s }: { s: number }): Promise<void> {
+    return Wait.sleep({ ms: s * 1000 });
   },
 
   /**
    * Sleep for a specified number of minutes
    * @param m - Duration in minutes
    */
-  minutes(m: number): Promise<void> {
-    return Wait.sleep(m * 60 * 1000);
+  minutes({ m }: { m: number }): Promise<void> {
+    return Wait.sleep({ ms: m * 60 * 1000 });
   },
 
   /**
    * Wait until a specific timestamp
    * @param timestamp - Unix timestamp in milliseconds
    */
-  async until(timestamp: number): Promise<void> {
+  async until({ timestamp }: { timestamp: number }): Promise<void> {
     const now = Date.now();
     if (timestamp <= now) {
       return;
     }
-    await Wait.sleep(timestamp - now);
+    await Wait.sleep({ ms: timestamp - now });
   },
 
   /**
@@ -78,8 +48,17 @@ export const Wait = {
    * @param options - Wait options
    * @returns The truthy value from the condition
    */
-  async for<T>(options: WaitForOptions<T>): Promise<T> {
-    const { condition, interval = 1000, timeout, timeoutMessage } = options;
+  async for<T>({
+    condition,
+    interval = 1000,
+    timeout,
+    timeoutMessage,
+  }: {
+    condition: () => T | Promise<T>;
+    interval?: number;
+    timeout?: number;
+    timeoutMessage?: string;
+  }): Promise<T> {
     const startTime = Date.now();
 
     while (true) {
@@ -92,7 +71,7 @@ export const Wait = {
         throw new Error(timeoutMessage ?? `Wait.for timed out after ${timeout}ms`);
       }
 
-      await Wait.sleep(interval);
+      await Wait.sleep({ ms: interval });
     }
   },
 
@@ -101,8 +80,23 @@ export const Wait = {
    * @param options - Poll options
    * @returns The final value (optionally transformed)
    */
-  async poll<T, R = T>(options: WaitPollOptions<T, R>): Promise<R> {
-    const { fetch, until, interval = 1000, timeout, transform, timeoutMessage, onPoll } = options;
+  async poll<T, R = T>({
+    fetch,
+    until,
+    interval = 1000,
+    timeout,
+    transform,
+    timeoutMessage,
+    onPoll,
+  }: {
+    fetch: () => Promise<T>;
+    until: (value: T) => boolean;
+    interval?: number;
+    timeout?: number;
+    transform?: (value: T) => R;
+    timeoutMessage?: string;
+    onPoll?: (value: T, elapsed: number) => void;
+  }): Promise<R> {
     const startTime = Date.now();
 
     while (true) {
@@ -121,7 +115,7 @@ export const Wait = {
         throw new Error(timeoutMessage ?? `Wait.poll timed out after ${timeout}ms`);
       }
 
-      await Wait.sleep(interval);
+      await Wait.sleep({ ms: interval });
     }
   },
 
@@ -131,22 +125,26 @@ export const Wait = {
    * @param minBalance - Minimum balance required
    * @param options - Additional options
    */
-  async forBalance(
-    getBalance: () => Promise<bigint>,
-    minBalance: bigint,
-    options: {
-      interval?: number;
-      timeout?: number;
-      onPoll?: (balance: bigint, elapsed: number) => void;
-    } = {}
-  ): Promise<bigint> {
+  async forBalance({
+    getBalance,
+    minBalance,
+    interval,
+    timeout,
+    onPoll,
+  }: {
+    getBalance: () => Promise<bigint>;
+    minBalance: bigint;
+    interval?: number;
+    timeout?: number;
+    onPoll?: (balance: bigint, elapsed: number) => void;
+  }): Promise<bigint> {
     return Wait.poll({
       fetch: getBalance,
       until: (balance) => balance >= minBalance,
-      interval: options.interval ?? 5000,
-      timeout: options.timeout,
+      interval: interval ?? 5000,
+      timeout,
       timeoutMessage: `Balance did not reach ${minBalance} within timeout`,
-      onPoll: options.onPoll,
+      onPoll,
     });
   },
 
@@ -156,22 +154,26 @@ export const Wait = {
    * @param requiredConfirmations - Number of confirmations required
    * @param options - Additional options
    */
-  async forConfirmations(
-    checkConfirmations: () => Promise<number>,
-    requiredConfirmations: number,
-    options: {
-      interval?: number;
-      timeout?: number;
-      onPoll?: (confirmations: number, elapsed: number) => void;
-    } = {}
-  ): Promise<number> {
+  async forConfirmations({
+    checkConfirmations,
+    requiredConfirmations,
+    interval,
+    timeout,
+    onPoll,
+  }: {
+    checkConfirmations: () => Promise<number>;
+    requiredConfirmations: number;
+    interval?: number;
+    timeout?: number;
+    onPoll?: (confirmations: number, elapsed: number) => void;
+  }): Promise<number> {
     return Wait.poll({
       fetch: checkConfirmations,
       until: (confirmations) => confirmations >= requiredConfirmations,
-      interval: options.interval ?? 3000,
-      timeout: options.timeout,
+      interval: interval ?? 3000,
+      timeout,
       timeoutMessage: `Transaction did not reach ${requiredConfirmations} confirmations within timeout`,
-      onPoll: options.onPoll,
+      onPoll,
     });
   },
 
@@ -180,7 +182,7 @@ export const Wait = {
    * @param ms - Timeout duration in milliseconds
    * @param message - Error message
    */
-  timeout(ms: number, message?: string): Promise<never> {
+  timeout({ ms, message }: { ms: number; message?: string }): Promise<never> {
     return new Promise((_, reject) => {
       setTimeout(() => {
         reject(new Error(message ?? `Operation timed out after ${ms}ms`));
@@ -194,8 +196,16 @@ export const Wait = {
    * @param ms - Timeout duration in milliseconds
    * @param message - Error message on timeout
    */
-  withTimeout<T>(promise: Promise<T>, ms: number, message?: string): Promise<T> {
-    return Promise.race([promise, Wait.timeout(ms, message)]);
+  withTimeout<T>({
+    promise,
+    ms,
+    message,
+  }: {
+    promise: Promise<T>;
+    ms: number;
+    message?: string;
+  }): Promise<T> {
+    return Promise.race([promise, Wait.timeout({ ms, message })]);
   },
 };
 
@@ -214,25 +224,20 @@ export const seconds = Wait.seconds;
  */
 export const minutes = Wait.minutes;
 
-/** Options for waitUntil helper */
-export interface WaitUntilOptions {
-  /** Polling interval in milliseconds */
-  intervalMs?: number;
-  /** Maximum time to wait in milliseconds */
-  timeoutMs?: number;
-  /** Optional message for timeout error */
-  timeoutMessage?: string;
-}
-
 /**
  * Convenience wrapper to wait until a predicate becomes true
  */
-export async function waitUntil(
-  predicate: () => boolean | Promise<boolean>,
-  options: WaitUntilOptions = {}
-): Promise<void> {
-  const { intervalMs = 1000, timeoutMs, timeoutMessage } = options;
-
+export async function waitUntil({
+  predicate,
+  intervalMs = 1000,
+  timeoutMs,
+  timeoutMessage,
+}: {
+  predicate: () => boolean | Promise<boolean>;
+  intervalMs?: number;
+  timeoutMs?: number;
+  timeoutMessage?: string;
+}): Promise<void> {
   await Wait.for({
     condition: async () => {
       const result = await predicate();

@@ -72,7 +72,10 @@ type ExecuteParamUnion<TPolicies extends PolicySpecMap> = {
  * });
  *
  * // Propose a ChainSig transaction under a policy
- * const result = await dew.proposeChainSigTransaction('chainsig_policy', serializedTx);
+ * const result = await dew.proposeChainSigTransaction({
+ *   policyId: "chainsig_policy",
+ *   encodedTx: serializedTx,
+ * });
  * ```
  */
 export class DewClient<TPolicies extends PolicySpecMap> {
@@ -139,11 +142,11 @@ export class DewClient<TPolicies extends PolicySpecMap> {
         }
         const chainSigOptions = params.options as ChainSigExecuteOptions | undefined;
 
-        const proposal = await this.proposeChainSigTransaction(
-          String(id),
-          payload,
-          chainSigOptions
-        );
+        const proposal = await this.proposeChainSigTransaction({
+          policyId: String(id),
+          encodedTx: payload,
+          options: chainSigOptions,
+        });
 
         if (!proposal.executed || !chainSigOptions?.chainSig) {
           return proposal;
@@ -174,12 +177,12 @@ export class DewClient<TPolicies extends PolicySpecMap> {
             `Policy ${String(id)} expects { receiverId, actions } for NearNativeTransaction.`
           );
         }
-        return this.proposeNearActions(
-          String(id),
-          nearPayload.receiverId,
-          nearPayload.actions,
-          params.options as NearCallOptions | undefined
-        );
+        return this.proposeNearActions({
+          policyId: String(id),
+          receiverId: nearPayload.receiverId,
+          actions: nearPayload.actions,
+          options: params.options as NearCallOptions | undefined,
+        });
       }
       case "KernelConfiguration": {
         if (!(typeof payload === "string" || typeof payload === "object")) {
@@ -187,11 +190,11 @@ export class DewClient<TPolicies extends PolicySpecMap> {
             `Policy ${String(id)} expects function args (object or string) for KernelConfiguration.`
           );
         }
-        return this.proposeExecution(
-          String(id),
-          payload as Record<string, unknown> | string,
-          params.options as NearCallOptions | undefined
-        );
+        return this.proposeExecution({
+          policyId: String(id),
+          functionArgs: payload as Record<string, unknown> | string,
+          options: params.options as NearCallOptions | undefined,
+        });
       }
       case "ChainSigMessage": {
         throw new Error(
@@ -238,12 +241,15 @@ export class DewClient<TPolicies extends PolicySpecMap> {
   /**
    * Send a NEAR transaction through the connected account
    */
-  async sendNearTx(
-    data: NearTransactionData,
-    options?: NearCallOptions
-  ): Promise<NearTransactionResult> {
-    const account = this.resolveNearWallet(options);
-    return sendNearTransaction(account, data);
+  async sendNearTx({
+    data,
+    options,
+  }: {
+    data: NearTransactionData;
+    options?: NearCallOptions;
+  }): Promise<NearTransactionResult> {
+    const account = this.resolveNearWallet({ options });
+    return sendNearTransaction({ account, data });
   }
 
   /**
@@ -253,53 +259,74 @@ export class DewClient<TPolicies extends PolicySpecMap> {
    * @param signedTx - Base64-encoded signed transaction
    * @returns Transaction outcome
    */
-  async broadcastNearTx(
-    signedTx: string | Uint8Array,
-    options?: NearRpcOptions
-  ): Promise<providers.FinalExecutionOutcome> {
+  async broadcastNearTx({
+    signedTx,
+    options,
+  }: {
+    signedTx: string | Uint8Array;
+    options?: NearRpcOptions;
+  }): Promise<providers.FinalExecutionOutcome> {
     const { broadcastNearTransaction } = await import("./utils/broadcast.js");
-    const provider = this.resolveNearProvider(options);
-    return broadcastNearTransaction(provider, signedTx);
+    const provider = this.resolveNearProvider({ options });
+    return broadcastNearTransaction({ rpcUrlOrProvider: provider, signedTx });
   }
 
   // ===========================================================================
   // Kernel + Policy Methods (Flattened)
   // ===========================================================================
 
-  private async callKernel(
-    method: string,
-    args: Record<string, unknown>,
-    options?: NearCallOptions
-  ): Promise<providers.FinalExecutionOutcome> {
+  private async callKernel({
+    method,
+    args,
+    options,
+  }: {
+    method: string;
+    args: Record<string, unknown>;
+    options?: NearCallOptions;
+  }): Promise<providers.FinalExecutionOutcome> {
     const gasNumber = (options?.gasTgas ?? DEFAULT_GAS_TGAS) * TGAS_TO_GAS;
     const gas = BigInt(Math.floor(gasNumber));
     const depositStr = options?.depositYocto ?? DEFAULT_DEPOSIT_YOCTO;
     const deposit = BigInt(depositStr);
-    const account = this.resolveNearWallet(options);
-    return sendNearTransaction(account, {
-      receiverId: this.kernelId,
-      actions: [transactions.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit)],
+    const account = this.resolveNearWallet({ options });
+    return sendNearTransaction({
+      account,
+      data: {
+        receiverId: this.kernelId,
+        actions: [
+          transactions.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit),
+        ],
+      },
     });
   }
 
-  private async viewKernel<T>(
-    method: string,
-    args: Record<string, unknown>,
-    options?: NearViewOptions
-  ): Promise<T> {
-    return this.viewFunction(this.kernelId, method, args, options);
+  private async viewKernel<T>({
+    method,
+    args,
+    options,
+  }: {
+    method: string;
+    args: Record<string, unknown>;
+    options?: NearViewOptions;
+  }): Promise<T> {
+    return this.viewFunction({ accountId: this.kernelId, method, args, options });
   }
 
   /**
    * View any NEAR contract method via JSON-RPC
    */
-  async viewFunction<T>(
-    accountId: string,
-    method: string,
-    args: Record<string, unknown>,
-    options?: NearViewOptions
-  ): Promise<T> {
-    const provider = this.resolveNearProvider(options);
+  async viewFunction<T>({
+    accountId,
+    method,
+    args,
+    options,
+  }: {
+    accountId: string;
+    method: string;
+    args: Record<string, unknown>;
+    options?: NearViewOptions;
+  }): Promise<T> {
+    const provider = this.resolveNearProvider({ options });
     const res = (await provider.query({
       request_type: "call_function",
       account_id: accountId,
@@ -315,63 +342,79 @@ export class DewClient<TPolicies extends PolicySpecMap> {
   /**
    * Derive chain signature public key + address for a derivation path
    */
-  async deriveChainSigAccount(
-    params: {
-      chain: ChainEnvironment;
-      derivationPath: string;
-      nearNetwork?: "Mainnet" | "Testnet";
-    },
-    options?: NearViewOptions
-  ): Promise<{ public_key: string; address: string }> {
-    const nearNetwork = params.nearNetwork ?? "Mainnet";
-    return this.viewFunction(
-      this.kernelId,
-      "derive_address_and_public_key",
-      {
-        path: params.derivationPath,
-        chain: params.chain,
-        near_network: nearNetwork,
+  async deriveChainSigAccount({
+    chain,
+    derivationPath,
+    nearNetwork,
+    options,
+  }: {
+    chain: ChainEnvironment;
+    derivationPath: string;
+    nearNetwork?: "Mainnet" | "Testnet";
+    options?: NearViewOptions;
+  }): Promise<{ public_key: string; address: string }> {
+    const resolvedNetwork = nearNetwork ?? "Mainnet";
+    return this.viewFunction({
+      accountId: this.kernelId,
+      method: "derive_address_and_public_key",
+      args: {
+        path: derivationPath,
+        chain,
+        near_network: resolvedNetwork,
       },
-      options
-    );
+      options,
+    });
   }
 
-  async proposeExecution(
-    policyId: string,
-    functionArgs: Record<string, unknown> | string,
-    options?: NearCallOptions
-  ): Promise<providers.FinalExecutionOutcome> {
-    return this.callKernel(
-      "propose_execution",
-      { policy_id: policyId, function_args: functionArgs },
-      options
-    );
+  async proposeExecution({
+    policyId,
+    functionArgs,
+    options,
+  }: {
+    policyId: string;
+    functionArgs: Record<string, unknown> | string;
+    options?: NearCallOptions;
+  }): Promise<providers.FinalExecutionOutcome> {
+    return this.callKernel({
+      method: "propose_execution",
+      args: { policy_id: policyId, function_args: functionArgs },
+      options,
+    });
   }
 
-  private async proposeExecutionKernelCoreFunction(
-    method: string,
-    functionArgs: Record<string, unknown>,
-    options?: NearCallOptions
-  ): Promise<KernelCoreProposalResult> {
-    const outcome = await this.proposeExecution(method, functionArgs, options);
-    const executed = wasProposalExecuted(outcome);
-    const proposalId = extractProposalId(outcome);
+  private async proposeExecutionKernelCoreFunction({
+    method,
+    functionArgs,
+    options,
+  }: {
+    method: string;
+    functionArgs: Record<string, unknown>;
+    options?: NearCallOptions;
+  }): Promise<KernelCoreProposalResult> {
+    const outcome = await this.proposeExecution({ policyId: method, functionArgs, options });
+    const executed = wasProposalExecuted({ outcome });
+    const proposalId = extractProposalId({ outcome });
     if (executed) {
       return { executed: true, proposalId };
     }
-    const proposal = await this.getProposal(proposalId, options);
+    const proposal = await this.getProposal({ proposalId, options });
     if (!proposal) {
       throw new Error(`Proposal ${proposalId} not found after creation.`);
     }
     return { executed: false, proposalId, proposal };
   }
 
-  async proposeNearActions(
-    policyId: string,
-    receiverId: string,
-    actions: txType.Action[],
-    options?: NearCallOptions
-  ): Promise<NearProposalResult> {
+  async proposeNearActions({
+    policyId,
+    receiverId,
+    actions,
+    options,
+  }: {
+    policyId: string;
+    receiverId: string;
+    actions: txType.Action[];
+    options?: NearCallOptions;
+  }): Promise<NearProposalResult> {
     const serializedActions = actions.map((action) => {
       const actionAny = action as {
         type?: string;
@@ -396,14 +439,14 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       receiver_id: receiverId,
       actions: serializedActions,
     };
-    const outcome = await this.callKernel(
-      "propose_execution",
-      { policy_id: policyId, function_args: args },
-      options
-    );
+    const outcome = await this.callKernel({
+      method: "propose_execution",
+      args: { policy_id: policyId, function_args: args },
+      options,
+    });
 
-    const executed = wasProposalExecuted(outcome);
-    const proposalId = extractProposalId(outcome);
+    const executed = wasProposalExecuted({ outcome });
+    const proposalId = extractProposalId({ outcome });
 
     if (executed) {
       return { executed: true, proposalId, outcome };
@@ -411,261 +454,440 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     return { executed: false, proposalId, outcome };
   }
 
-  async proposeChainSigTransaction(
-    policyId: string,
-    encodedTx: string | Uint8Array,
-    options?: ChainSigProposeOptions
-  ): Promise<ChainSigTransactionProposalResult> {
-    const txData = normalizeChainSigEncodedTx(encodedTx, options?.encoding);
-    const outcome = await this.callKernel(
-      "propose_execution",
-      { policy_id: policyId, function_args: txData },
-      options
-    );
+  async proposeChainSigTransaction({
+    policyId,
+    encodedTx,
+    options,
+  }: {
+    policyId: string;
+    encodedTx: string | Uint8Array;
+    options?: ChainSigProposeOptions;
+  }): Promise<ChainSigTransactionProposalResult> {
+    const txData = normalizeChainSigEncodedTx({
+      encodedTx,
+      encoding: options?.encoding,
+    });
+    const outcome = await this.callKernel({
+      method: "propose_execution",
+      args: { policy_id: policyId, function_args: txData },
+      options,
+    });
 
-    const executed = wasProposalExecuted(outcome);
-    const proposalId = extractProposalId(outcome);
+    const executed = wasProposalExecuted({ outcome });
+    const proposalId = extractProposalId({ outcome });
 
     if (executed) {
-      const signatures = extractMPCSignatures(outcome);
+      const signatures = extractMPCSignatures({ result: outcome });
       return { executed: true, proposalId, signatures, outcome };
     }
     return { executed: false, proposalId, outcome };
   }
 
-  async voteOnProposal(proposalId: number, options?: NearCallOptions): Promise<VoteProposalResult> {
-    const outcome = await this.callKernel(
-      "vote_on_proposal",
-      { proposal_id: proposalId },
-      options ?? { depositYocto: ONE_YOCTO }
-    );
-    const executed = wasProposalExecuted(outcome);
+  async voteOnProposal({
+    proposalId,
+    options,
+  }: {
+    proposalId: number;
+    options?: NearCallOptions;
+  }): Promise<VoteProposalResult> {
+    const outcome = await this.callKernel({
+      method: "vote_on_proposal",
+      args: { proposal_id: proposalId },
+      options: options ?? { depositYocto: ONE_YOCTO },
+    });
+    const executed = wasProposalExecuted({ outcome });
     if (executed) {
-      const signatures = extractMPCSignatures(outcome);
+      const signatures = extractMPCSignatures({ result: outcome });
       if (signatures.length) {
         return { executed: true, proposalId, signatures };
       }
       return { executed: true, proposalId };
     }
-    const proposal = await this.getProposal(proposalId, options);
+    const proposal = await this.getProposal({ proposalId, options });
     if (!proposal) {
       throw new Error(`Proposal ${proposalId} not found after vote.`);
     }
     return { executed: false, proposalId, proposal };
   }
 
-  async cancelProposal(
-    proposalId: number,
-    options?: NearCallOptions
-  ): Promise<providers.FinalExecutionOutcome> {
-    return this.callKernel(
-      "cancel_proposal",
-      { proposal_id: proposalId },
-      options ?? { depositYocto: ONE_YOCTO }
-    );
+  async cancelProposal({
+    proposalId,
+    options,
+  }: {
+    proposalId: number;
+    options?: NearCallOptions;
+  }): Promise<providers.FinalExecutionOutcome> {
+    return this.callKernel({
+      method: "cancel_proposal",
+      args: { proposal_id: proposalId },
+      options: options ?? { depositYocto: ONE_YOCTO },
+    });
   }
 
-  async getProposal(proposalId: number, options?: NearViewOptions): Promise<Proposal | null> {
-    return this.viewKernel("get_proposal", { proposal_id: proposalId }, options);
+  async getProposal({
+    proposalId,
+    options,
+  }: {
+    proposalId: number;
+    options?: NearViewOptions;
+  }): Promise<Proposal | null> {
+    return this.viewKernel({ method: "get_proposal", args: { proposal_id: proposalId }, options });
   }
 
-  async getLatestProposalId(options?: NearViewOptions): Promise<number> {
-    return this.viewKernel("get_latest_proposal_id", {}, options);
+  async getLatestProposalId({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<number> {
+    return this.viewKernel({ method: "get_latest_proposal_id", args: {}, options });
   }
 
-  async getProposalCount(options?: NearViewOptions): Promise<[number, number]> {
-    return this.viewKernel("get_proposal_count", {}, options);
+  async getProposalCount({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<[number, number]> {
+    return this.viewKernel({ method: "get_proposal_count", args: {}, options });
   }
 
-  async getActiveProposals(
-    fromIndex?: number,
-    limit?: number,
-    options?: NearViewOptions
-  ): Promise<Proposal[]> {
-    return this.viewKernel("get_active_proposals", { from_index: fromIndex, limit }, options);
+  async getActiveProposals({
+    fromIndex,
+    limit,
+    options,
+  }: {
+    fromIndex?: number;
+    limit?: number;
+    options?: NearViewOptions;
+  } = {}): Promise<Proposal[]> {
+    return this.viewKernel({
+      method: "get_active_proposals",
+      args: { from_index: fromIndex, limit },
+      options,
+    });
   }
 
-  async getUserActiveProposals(accountId: string, options?: NearViewOptions): Promise<Proposal[]> {
-    return this.viewKernel("get_user_active_proposals", { account_id: accountId }, options);
+  async getUserActiveProposals({
+    accountId,
+    options,
+  }: {
+    accountId: string;
+    options?: NearViewOptions;
+  }): Promise<Proposal[]> {
+    return this.viewKernel({
+      method: "get_user_active_proposals",
+      args: { account_id: accountId },
+      options,
+    });
   }
 
-  async canReleaseLock(options?: NearViewOptions): Promise<boolean> {
-    return this.viewKernel("can_release_lock", {}, options);
+  async canReleaseLock({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<boolean> {
+    return this.viewKernel({ method: "can_release_lock", args: {}, options });
   }
 
-  async getPendingActionsCount(options?: NearViewOptions): Promise<number> {
-    return this.viewKernel("get_pending_actions_count", {}, options);
+  async getPendingActionsCount({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<number> {
+    return this.viewKernel({ method: "get_pending_actions_count", args: {}, options });
   }
 
-  async propose(
-    policyId: string,
-    functionArgs: Record<string, unknown>,
-    options?: NearCallOptions
-  ): Promise<providers.FinalExecutionOutcome> {
-    return this.proposeExecution(policyId, functionArgs, options);
+  async propose({
+    policyId,
+    functionArgs,
+    options,
+  }: {
+    policyId: string;
+    functionArgs: Record<string, unknown>;
+    options?: NearCallOptions;
+  }): Promise<providers.FinalExecutionOutcome> {
+    return this.proposeExecution({ policyId, functionArgs, options });
   }
 
-  async grantRole(
-    roleId: string,
-    target: RoleTarget,
-    options?: NearCallOptions
-  ): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction(
-      "grant_role",
-      { role_id: roleId, target },
-      options
-    );
+  async grantRole({
+    roleId,
+    target,
+    options,
+  }: {
+    roleId: string;
+    target: RoleTarget;
+    options?: NearCallOptions;
+  }): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "grant_role",
+      functionArgs: { role_id: roleId, target },
+      options,
+    });
   }
 
-  async revokeRole(
-    roleId: string,
-    target: RoleTarget,
-    options?: NearCallOptions
-  ): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction(
-      "revoke_role",
-      { role_id: roleId, target },
-      options
-    );
+  async revokeRole({
+    roleId,
+    target,
+    options,
+  }: {
+    roleId: string;
+    target: RoleTarget;
+    options?: NearCallOptions;
+  }): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "revoke_role",
+      functionArgs: { role_id: roleId, target },
+      options,
+    });
   }
 
-  async upsertPolicy(
-    targetPolicyId: string,
-    policy: Policy,
-    options?: NearCallOptions
-  ): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction(
-      "upsert_policy",
-      { target_policy_id: targetPolicyId, policy },
-      options
-    );
+  async upsertPolicy({
+    targetPolicyId,
+    policy,
+    options,
+  }: {
+    targetPolicyId: string;
+    policy: Policy;
+    options?: NearCallOptions;
+  }): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "upsert_policy",
+      functionArgs: { target_policy_id: targetPolicyId, policy },
+      options,
+    });
   }
 
-  async updatePolicyChangeControl(
-    changeControl: ChangeControl,
-    options?: NearCallOptions
-  ): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction(
-      "update_policy_change_control",
-      { change_control: changeControl },
-      options
-    );
+  async updatePolicyChangeControl({
+    changeControl,
+    options,
+  }: {
+    changeControl: ChangeControl;
+    options?: NearCallOptions;
+  }): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "update_policy_change_control",
+      functionArgs: { change_control: changeControl },
+      options,
+    });
   }
 
-  async cancelPendingPolicy(
-    policyId: string,
-    options?: NearCallOptions
-  ): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction(
-      "cancel_pending_policy",
-      { policy_id: policyId },
-      options
-    );
+  async cancelPendingPolicy({
+    policyId,
+    options,
+  }: {
+    policyId: string;
+    options?: NearCallOptions;
+  }): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "cancel_pending_policy",
+      functionArgs: { policy_id: policyId },
+      options,
+    });
   }
 
-  async forceActivatePolicy(
-    policyId: string,
-    options?: NearCallOptions
-  ): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction(
-      "force_activate_policy",
-      { policy_id: policyId },
-      options
-    );
+  async forceActivatePolicy({
+    policyId,
+    options,
+  }: {
+    policyId: string;
+    options?: NearCallOptions;
+  }): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "force_activate_policy",
+      functionArgs: { policy_id: policyId },
+      options,
+    });
   }
 
-  async acquireLock(options?: NearCallOptions): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction("acquire_lock", {}, options);
+  async acquireLock({
+    options,
+  }: {
+    options?: NearCallOptions;
+  } = {}): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "acquire_lock",
+      functionArgs: {},
+      options,
+    });
   }
 
-  async releaseLock(options?: NearCallOptions): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction("release_lock", {}, options);
+  async releaseLock({
+    options,
+  }: {
+    options?: NearCallOptions;
+  } = {}): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "release_lock",
+      functionArgs: {},
+      options,
+    });
   }
 
-  async forceReleaseLock(options?: NearCallOptions): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction("force_release_lock", {}, options);
+  async forceReleaseLock({
+    options,
+  }: {
+    options?: NearCallOptions;
+  } = {}): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "force_release_lock",
+      functionArgs: {},
+      options,
+    });
   }
 
-  async forceCompletePendingAction(
-    policyId: string,
-    options?: NearCallOptions
-  ): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction(
-      "force_complete_pending_action",
-      { policy_id: policyId },
-      options
-    );
+  async forceCompletePendingAction({
+    policyId,
+    options,
+  }: {
+    policyId: string;
+    options?: NearCallOptions;
+  }): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "force_complete_pending_action",
+      functionArgs: { policy_id: policyId },
+      options,
+    });
   }
 
-  async batchUpdatePolicies(
-    policies: Policy[],
-    options?: NearCallOptions
-  ): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction("batch_update_policies", { policies }, options);
+  async batchUpdatePolicies({
+    policies,
+    options,
+  }: {
+    policies: Policy[];
+    options?: NearCallOptions;
+  }): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "batch_update_policies",
+      functionArgs: { policies },
+      options,
+    });
   }
 
-  async storeData(
-    key: string,
-    value: string,
-    options?: NearCallOptions
-  ): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction("store_data", { key, value }, options);
+  async storeData({
+    key,
+    value,
+    options,
+  }: {
+    key: string;
+    value: string;
+    options?: NearCallOptions;
+  }): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "store_data",
+      functionArgs: { key, value },
+      options,
+    });
   }
 
-  async batchStoreData(
-    keys: string[],
-    values: string[],
-    options?: NearCallOptions
-  ): Promise<KernelCoreProposalResult> {
-    return this.proposeExecutionKernelCoreFunction("batch_store_data", { keys, values }, options);
+  async batchStoreData({
+    keys,
+    values,
+    options,
+  }: {
+    keys: string[];
+    values: string[];
+    options?: NearCallOptions;
+  }): Promise<KernelCoreProposalResult> {
+    return this.proposeExecutionKernelCoreFunction({
+      method: "batch_store_data",
+      functionArgs: { keys, values },
+      options,
+    });
   }
 
-  async getPolicyById(policyId: string, options?: NearViewOptions): Promise<Policy | null> {
-    return this.viewKernel("get_policy_by_id", { policy_id: policyId }, options);
+  async getPolicyById({
+    policyId,
+    options,
+  }: {
+    policyId: string;
+    options?: NearViewOptions;
+  }): Promise<Policy | null> {
+    return this.viewKernel({
+      method: "get_policy_by_id",
+      args: { policy_id: policyId },
+      options,
+    });
   }
 
-  async getAllPolicies(
-    fromIndex?: number,
-    limit?: number,
-    options?: NearViewOptions
-  ): Promise<Array<[string, Policy]>> {
-    return this.viewKernel("get_all_policies", { from_index: fromIndex, limit }, options);
+  async getAllPolicies({
+    fromIndex,
+    limit,
+    options,
+  }: {
+    fromIndex?: number;
+    limit?: number;
+    options?: NearViewOptions;
+  } = {}): Promise<Array<[string, Policy]>> {
+    return this.viewKernel({
+      method: "get_all_policies",
+      args: { from_index: fromIndex, limit },
+      options,
+    });
   }
 
-  async getPendingPolicy(policyId: string, options?: NearViewOptions): Promise<Policy | null> {
-    return this.viewKernel("get_pending_policy", { policy_id: policyId }, options);
+  async getPendingPolicy({
+    policyId,
+    options,
+  }: {
+    policyId: string;
+    options?: NearViewOptions;
+  }): Promise<Policy | null> {
+    return this.viewKernel({
+      method: "get_pending_policy",
+      args: { policy_id: policyId },
+      options,
+    });
   }
 
-  async getAllPendingPolicies(
-    fromIndex?: number,
-    limit?: number,
-    options?: NearViewOptions
-  ): Promise<Array<[string, Policy]>> {
-    return this.viewKernel("get_all_pending_policies", { from_index: fromIndex, limit }, options);
+  async getAllPendingPolicies({
+    fromIndex,
+    limit,
+    options,
+  }: {
+    fromIndex?: number;
+    limit?: number;
+    options?: NearViewOptions;
+  } = {}): Promise<Array<[string, Policy]>> {
+    return this.viewKernel({
+      method: "get_all_pending_policies",
+      args: { from_index: fromIndex, limit },
+      options,
+    });
   }
 
-  async getPolicyCount(options?: NearViewOptions): Promise<number> {
-    return this.viewKernel("get_policy_count", {}, options);
+  async getPolicyCount({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<number> {
+    return this.viewKernel({ method: "get_policy_count", args: {}, options });
   }
 
-  private resolveNearProvider(options?: NearRpcOptions): providers.JsonRpcProvider {
+  private resolveNearProvider({
+    options,
+  }: {
+    options?: NearRpcOptions;
+  } = {}): providers.JsonRpcProvider {
     if (options?.nearProvider) {
       return options.nearProvider;
     }
     if (options?.nearRpcUrl) {
-      return getNearProvider(options.nearRpcUrl);
+      return getNearProvider({ rpcUrl: options.nearRpcUrl });
     }
     if (this.nearProvider) {
       return this.nearProvider;
     }
     if (this.nearRpcUrl) {
-      return getNearProvider(this.nearRpcUrl);
+      return getNearProvider({ rpcUrl: this.nearRpcUrl });
     }
     const rpcUrl = this.nearRpcUrl ?? "https://rpc.mainnet.near.org";
-    return getNearProvider(rpcUrl);
+    return getNearProvider({ rpcUrl });
   }
 
-  private resolveNearWallet(options?: NearCallOptions): NearWallet {
+  private resolveNearWallet({
+    options,
+  }: {
+    options?: NearCallOptions;
+  } = {}): NearWallet {
     if (options?.nearWallet) {
       return options.nearWallet;
     }
@@ -673,10 +895,13 @@ export class DewClient<TPolicies extends PolicySpecMap> {
   }
 }
 
-function normalizeChainSigEncodedTx(
-  encodedTx: string | Uint8Array,
-  encoding?: "hex" | "base64"
-): string {
+function normalizeChainSigEncodedTx({
+  encodedTx,
+  encoding,
+}: {
+  encodedTx: string | Uint8Array;
+  encoding?: "hex" | "base64";
+}): string {
   if (encodedTx instanceof Uint8Array) {
     if (encoding === "base64") {
       return Buffer.from(encodedTx).toString("base64");
@@ -697,14 +922,14 @@ function normalizeChainSigEncodedTx(
     return encodedTx;
   }
 
-  if (isLikelyHex(encodedTx)) {
+  if (isLikelyHex({ value: encodedTx })) {
     return `0x${encodedTx}`;
   }
 
   return encodedTx;
 }
 
-function isLikelyHex(value: string): boolean {
+function isLikelyHex({ value }: { value: string }): boolean {
   return /^[0-9a-fA-F]+$/.test(value) && value.length % 2 === 0;
 }
 
@@ -712,7 +937,7 @@ function isLikelyHex(value: string): boolean {
  * Check if a proposal was executed immediately by inspecting the transaction outcome.
  * Looks for execution events/logs in the receipts.
  */
-function wasProposalExecuted(outcome: providers.FinalExecutionOutcome): boolean {
+function wasProposalExecuted({ outcome }: { outcome: providers.FinalExecutionOutcome }): boolean {
   // Check for execution indicators in logs
   for (const receipt of outcome.receipts_outcome) {
     const logs = receipt.outcome.logs;
@@ -754,7 +979,7 @@ function wasProposalExecuted(outcome: providers.FinalExecutionOutcome): boolean 
  * Extract proposal ID from transaction outcome.
  * The kernel emits the proposal ID in logs when a proposal is created.
  */
-function extractProposalId(outcome: providers.FinalExecutionOutcome): number {
+function extractProposalId({ outcome }: { outcome: providers.FinalExecutionOutcome }): number {
   // Look for proposal_id in logs
   for (const receipt of outcome.receipts_outcome) {
     const logs = receipt.outcome.logs;
@@ -785,7 +1010,11 @@ function extractProposalId(outcome: providers.FinalExecutionOutcome): number {
  * Extract MPC signatures from a NEAR transaction result.
  * Used when a proposal auto-executes and returns chain signatures.
  */
-export function extractMPCSignatures(result: providers.FinalExecutionOutcome): MPCSignature[] {
+export function extractMPCSignatures({
+  result,
+}: {
+  result: providers.FinalExecutionOutcome;
+}): MPCSignature[] {
   const signatures: MPCSignature[] = [];
 
   // Scan through all receipts and their outcomes for signature data

@@ -138,38 +138,55 @@ dew.execute({
 
 async function run() {
   // Propose + Auto Execute (1 vote required by policy)
-  await dew.upsertPolicy("near_policy", {
-    id: "near_policy",
-    description: "near_policy",
-    requiredRole: "owner",
-    requiredVoteCount: 1,
-    policyType: "NearNativeTransaction",
-    policyDetails: {
-      type: "NearNativeTransaction",
-      config: {
-        chainEnvironment: "NearWasm",
-        restrictions: [],
+  await dew.upsertPolicy({
+    targetPolicyId: "near_policy",
+    policy: {
+      id: "near_policy",
+      description: "near_policy",
+      requiredRole: "owner",
+      requiredVoteCount: 1,
+      policyType: "NearNativeTransaction",
+      policyDetails: {
+        type: "NearNativeTransaction",
+        config: {
+          chainEnvironment: "NearWasm",
+          restrictions: [],
+        },
       },
+      activationTime: "0",
+      proposalExpiryTimeNanosec: "0",
+      requiredPendingActions: [],
     },
-    activationTime: "0",
-    proposalExpiryTimeNanosec: "0",
-    requiredPendingActions: [],
   });
   // Propose and vote (1 < votes required by policy)
-  const proposal = await dew.grantRole("strategist", {
-    type: "AccountId",
-    accountId: wallets[3].accountId,
+  const proposal = await dew.grantRole({
+    roleId: "strategist",
+    target: {
+      type: "AccountId",
+      accountId: wallets[3].accountId,
+    },
   });
-  await dew.voteOnProposal(proposal.proposalId, { nearWallet: wallets[1] });
-  const finalVote = await dew.voteOnProposal(proposal.proposalId, {
-    nearWallet: wallets[2],
+  await dew.voteOnProposal({
+    proposalId: proposal.proposalId,
+    options: { nearWallet: wallets[1] },
+  });
+  const finalVote = await dew.voteOnProposal({
+    proposalId: proposal.proposalId,
+    options: { nearWallet: wallets[2] },
   });
   console.log("grant_role executed:", finalVote.executed);
 
-  const nearTx = await dew.proposeNearActions("near_policy", "receiver.testnet", []);
+  const nearTx = await dew.proposeNearActions({
+    policyId: "near_policy",
+    receiverId: "receiver.testnet",
+    actions: [],
+  });
   console.log("near tx executed:", nearTx.executed);
 
-  const evmTx = await dew.proposeChainSigTransaction("evm_policy", "0xdead");
+  const evmTx = await dew.proposeChainSigTransaction({
+    policyId: "evm_policy",
+    encodedTx: "0xdead",
+  });
   console.log("chain sig tx executed", evmTx);
 
   const deposit = await depositToIntents({

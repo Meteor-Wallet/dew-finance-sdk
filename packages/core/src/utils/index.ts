@@ -1,6 +1,5 @@
 // Wait
 export { Wait, sleep, seconds, minutes, waitUntil } from "./wait.js";
-export type { WaitForOptions, WaitPollOptions, WaitUntilOptions } from "./wait.js";
 
 // Broadcasting
 export { broadcastNearTransaction, broadcastEvmTransaction } from "./broadcast.js";
@@ -25,18 +24,9 @@ export {
   INTENTS_POLICY_METHODS,
 } from "./intents.js";
 export type {
-  DepositToIntentsParams,
   DepositToIntentsResult,
-  WithdrawFromIntentsParams,
   WithdrawFromIntentsResult,
-  IntentsSwapParams,
   IntentsSwapResult,
   IntentsPolicyMethod,
   IntentsPolicyIdMap,
-  IntentsPolicyIdMapParams,
-  IntentsFtDepositPolicyParams,
-  IntentsFtWithdrawToNearPolicyParams,
-  IntentsFtWithdrawToEvmPolicyParams,
-  IntentsErc20TransferToIntentsPolicyParams,
-  IntentsSwapPolicyParams,
 } from "./intents.js";

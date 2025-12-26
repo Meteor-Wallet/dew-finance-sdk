@@ -31,7 +31,6 @@ export {
 export type {
   DewVaultMethod,
   DewVaultPolicyIdMap,
-  DewVaultCallOptions,
   DewVaultSharePriceRate,
   DewVaultOperationSharePrice,
   DewVaultSharePriceList,
@@ -40,12 +39,6 @@ export type {
   DewVaultCurrentFlow,
   DewVaultFlowWindowInfo,
   DewVaultAccountantData,
-  DewVaultStrategistTransferParams,
-  DewVaultStrategistTransferProcessRedeemParams,
-  DewNearVaultClientConfig,
-  DewVaultPolicyListParams,
-  DewVaultStrategistTransferPolicyParams,
-  DewVaultStrategistTransferProcessRedeemPolicyParams,
 } from "./near-vault.js";
 
 // Policy defaults

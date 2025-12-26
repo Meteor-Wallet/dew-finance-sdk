@@ -49,13 +49,16 @@ Policy typing:
 - Use `definePolicies(...)` (or `satisfies PolicySpecMap`) to preserve literal policy IDs and builder signatures so `DewClient.execute` can infer `args`.
 - For builder-backed policies, prefer `*PolicySpecWithBuilder` types to keep builders required and args typed.
 
+Calling convention:
+
+- All SDK functions accept a single object argument (named fields) to make future changes additive.
+
 ## Roadmap
 
 - Dew Vault (EVM) support
 - CLI tools for deploying kernels and vaults
 - Pre-made policies for kernel configuration
 - Shade Agent templates
-- Make functions pass in one parameter, making things easy to add in the future, use inline type
 
 ## Packages
 
