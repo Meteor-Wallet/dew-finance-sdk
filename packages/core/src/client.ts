@@ -34,8 +34,7 @@ import type { transactions as txType } from "near-api-js";
 
 const TGAS_TO_GAS = 1_000_000_000_000; // 1e12
 const DEFAULT_GAS_TGAS = 150; // sensible default
-const ONE_YOCTO = "1";
-const DEFAULT_DEPOSIT_YOCTO = ONE_YOCTO;
+const DEFAULT_DEPOSIT_YOCTO = "0";
 
 type ExecuteOptionsFor<TPolicy> = TPolicy extends { policyType: "ChainSigTransaction" }
   ? ChainSigExecuteOptions
@@ -493,7 +492,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     const outcome = await this.callKernel({
       method: "vote_on_proposal",
       args: { proposal_id: proposalId },
-      options: options ?? { depositYocto: ONE_YOCTO },
+      options,
     });
     const executed = wasProposalExecuted({ outcome });
     if (executed) {
@@ -520,7 +519,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     return this.callKernel({
       method: "cancel_proposal",
       args: { proposal_id: proposalId },
-      options: options ?? { depositYocto: ONE_YOCTO },
+      options,
     });
   }
 
