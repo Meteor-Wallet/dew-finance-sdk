@@ -942,8 +942,8 @@ function wasProposalExecuted({ outcome }: { outcome: providers.FinalExecutionOut
   for (const receipt of outcome.receipts_outcome) {
     const logs = receipt.outcome.logs;
     for (const log of logs) {
-      // Look for ProposalExecuted event by name
-      if (log.includes("ProposalExecuted")) {
+      const event = parseEventJson({ log });
+      if (event?.event === "proposal_executed") {
         return true;
       }
 
@@ -984,26 +984,68 @@ function extractProposalId({ outcome }: { outcome: providers.FinalExecutionOutco
   for (const receipt of outcome.receipts_outcome) {
     const logs = receipt.outcome.logs;
     for (const log of logs) {
-      // Look for EVENT_JSON with proposal_id
-      if (log.includes("EVENT_JSON")) {
-        try {
-          const match = log.match(/\{[^}]*"proposal_id"\s*:\s*(\d+)[^}]*\}/);
-          if (match && match[1]) {
-            return parseInt(match[1], 10);
-          }
-        } catch {
-          // Continue
+      const event = parseEventJson({ log });
+      if (event) {
+        const id = extractProposalIdFromEvent({ event });
+        if (id !== undefined) {
+          return id;
         }
-      }
-      // Direct proposal_id mention
-      const match = log.match(/proposal[_\s]id[:\s]+(\d+)/i);
-      if (match && match[1]) {
-        return parseInt(match[1], 10);
       }
     }
   }
 
   throw new Error("Failed to extract proposal ID from kernel logs.");
+}
+
+function parseEventJson({ log }: { log: string }): { event: string; data?: unknown } | null {
+  if (!log.startsWith("EVENT_JSON:")) {
+    return null;
+  }
+  const payload = log.slice("EVENT_JSON:".length);
+  try {
+    const parsed = JSON.parse(payload) as { event?: unknown; data?: unknown };
+    if (parsed && typeof parsed === "object" && typeof parsed.event === "string") {
+      return { event: parsed.event, data: parsed.data };
+    }
+  } catch {
+    // Ignore malformed event logs
+  }
+  return null;
+}
+
+function extractProposalIdFromEvent({
+  event,
+}: {
+  event: { event: string; data?: unknown };
+}): number | undefined {
+  if (!isProposalEvent(event.event)) {
+    return undefined;
+  }
+  // Expected NEP-000 shape: { data: [{ proposal_id: 123, ... }] }
+  if (!Array.isArray(event.data) || event.data.length === 0) {
+    return undefined;
+  }
+  const first = event.data[0];
+  if (!first || typeof first !== "object") {
+    return undefined;
+  }
+  const proposalId = (first as { proposal_id?: unknown }).proposal_id;
+  if (typeof proposalId === "number" && Number.isFinite(proposalId)) {
+    return proposalId;
+  }
+  if (typeof proposalId === "string") {
+    // Digits-only strings are safe to parse as base-10 IDs.
+    if (/^\d+$/.test(proposalId)) {
+      return parseInt(proposalId, 10);
+    }
+  }
+  return undefined;
+}
+
+function isProposalEvent(value: string): boolean {
+  return (
+    value === "proposal_created" || value === "proposal_executed" || value === "proposal_cancelled"
+  );
 }
 
 /**
