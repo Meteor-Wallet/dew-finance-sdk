@@ -10,8 +10,12 @@ import type {
   ChainEnvironment,
   ChainSigResponse,
   ChainSigSignMethod,
+  ChainSigTransactionProposalResult,
+  ChainSigProposeOptions,
   NearCallOptions,
   NearTransactionResult,
+  NearTransactionBuildParams,
+  NearTransactionBuildResult,
   Policy,
   PolicyRestriction,
 } from "../types.js";
@@ -79,25 +83,21 @@ export function createIntentsPolicyIdMap({
 
 type Bigish = string | number;
 
-type ProposeNearActionsResult = {
-  executed: boolean;
-  proposalId: number;
-  outcome: NearTransactionResult;
-};
+type ProposeChainSigTransactionResult = ChainSigTransactionProposalResult;
 
 type ViewOptions = { nearProvider?: unknown; nearRpcUrl?: string };
 
-export interface DepositToIntentsResult extends ProposeNearActionsResult {
+export type DepositToIntentsResult = ProposeChainSigTransactionResult & {
   amount: string;
   receiverId: string;
-}
+};
 
-export interface WithdrawFromIntentsResult extends ProposeNearActionsResult {
+export type WithdrawFromIntentsResult = ProposeChainSigTransactionResult & {
   amount: string;
   intentsAccountId: string;
   destination: string;
   waitedBalance?: Big;
-}
+};
 
 type IntentsSwapQuote = {
   amount_in: string;
@@ -793,6 +793,7 @@ async function getIntentsMtBalance({
 export async function depositToIntents({
   client,
   policyId,
+  derivationPath,
   tokenId,
   amount,
   receiverId,
@@ -800,23 +801,28 @@ export async function depositToIntents({
   gasTgas,
   depositYocto,
   callOptions,
+  nearNetwork,
 }: {
   client: {
-    proposeNearActions: (params: {
+    buildNearTransaction: (
+      params: NearTransactionBuildParams
+    ) => Promise<NearTransactionBuildResult>;
+    proposeChainSigTransaction: (params: {
       policyId: string;
-      receiverId: string;
-      actions: transactions.Action[];
-      options?: NearCallOptions;
-    }) => Promise<ProposeNearActionsResult>;
+      encodedTx: string | Uint8Array;
+      options?: ChainSigProposeOptions;
+    }) => Promise<ProposeChainSigTransactionResult>;
   };
   policyId: string;
+  derivationPath: string;
   tokenId: string;
   amount: Bigish;
   receiverId?: string;
   msg?: string;
   gasTgas?: number;
   depositYocto?: string;
-  callOptions?: NearCallOptions;
+  callOptions?: ChainSigProposeOptions;
+  nearNetwork?: "Mainnet" | "Testnet";
 }): Promise<DepositToIntentsResult> {
   const resolvedReceiverId = receiverId ?? DEFAULT_INTENTS_ACCOUNT;
   const resolvedAmount = toAmount({ value: amount });
@@ -831,11 +837,21 @@ export async function depositToIntents({
     depositYocto: resolvedDepositYocto,
   });
 
-  const result = await client.proposeNearActions({
-    policyId,
+  const { encodedTx } = await client.buildNearTransaction({
     receiverId: tokenId,
     actions: [action],
+    signer: {
+      type: "ChainSig",
+      derivationPath,
+      nearNetwork,
+    },
     options: callOptions,
+  });
+
+  const result = await client.proposeChainSigTransaction({
+    policyId,
+    encodedTx,
+    options: { ...callOptions, encoding: "base64" },
   });
 
   return { ...result, amount: resolvedAmount, receiverId: resolvedReceiverId };
@@ -847,6 +863,7 @@ export async function depositToIntents({
 export async function withdrawFromIntents({
   client,
   policyId,
+  derivationPath,
   tokenId,
   amount,
   destination,
@@ -856,16 +873,20 @@ export async function withdrawFromIntents({
   depositYocto,
   callOptions,
   waitForBalance,
+  nearNetwork,
 }: {
   client: {
-    proposeNearActions: (params: {
+    buildNearTransaction: (
+      params: NearTransactionBuildParams
+    ) => Promise<NearTransactionBuildResult>;
+    proposeChainSigTransaction: (params: {
       policyId: string;
-      receiverId: string;
-      actions: transactions.Action[];
-      options?: NearCallOptions;
-    }) => Promise<ProposeNearActionsResult>;
+      encodedTx: string | Uint8Array;
+      options?: ChainSigProposeOptions;
+    }) => Promise<ProposeChainSigTransactionResult>;
   };
   policyId: string;
+  derivationPath: string;
   tokenId: string;
   amount: Bigish;
   destination: string;
@@ -873,13 +894,14 @@ export async function withdrawFromIntents({
   memo?: string;
   gasTgas?: number;
   depositYocto?: string;
-  callOptions?: NearCallOptions;
+  callOptions?: ChainSigProposeOptions;
   waitForBalance?: {
     getBalance: () => Promise<Big>;
     initialBalance?: Bigish;
     intervalMs?: number;
     timeoutMs?: number;
   };
+  nearNetwork?: "Mainnet" | "Testnet";
 }): Promise<WithdrawFromIntentsResult> {
   const resolvedIntentsAccountId = intentsAccountId ?? DEFAULT_INTENTS_ACCOUNT;
   const resolvedAmount = toAmount({ value: amount });
@@ -900,11 +922,21 @@ export async function withdrawFromIntents({
     depositYocto: resolvedDepositYocto,
   });
 
-  const result = await client.proposeNearActions({
-    policyId,
+  const { encodedTx } = await client.buildNearTransaction({
     receiverId: resolvedIntentsAccountId,
     actions: [action],
+    signer: {
+      type: "ChainSig",
+      derivationPath,
+      nearNetwork,
+    },
     options: callOptions,
+  });
+
+  const result = await client.proposeChainSigTransaction({
+    policyId,
+    encodedTx,
+    options: { ...callOptions, encoding: "base64" },
   });
 
   let waitedBalance: Big | undefined;

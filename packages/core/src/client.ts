@@ -17,6 +17,9 @@ import type {
   PolicySpecMap,
   PolicyExecutionPayload,
   NearNativeExecutionPayload,
+  NearTransactionBuildParams,
+  NearTransactionBuildResult,
+  NearTransactionSigner,
   RoleTarget,
   ChangeControl,
   VoteProposalResult,
@@ -25,11 +28,12 @@ import type {
   NearRpcOptions,
   NearViewOptions,
   NearTransactionResult,
+  ChainSigEncoding,
   ChainSigProposeOptions,
   ChainSigExecuteOptions,
 } from "./types.js";
 import { sendNearTransaction, getNearProvider } from "./near.js";
-import { providers, transactions } from "near-api-js";
+import { providers, transactions, utils } from "near-api-js";
 import type { transactions as txType } from "near-api-js";
 
 const TGAS_TO_GAS = 1_000_000_000_000; // 1e12
@@ -140,11 +144,21 @@ export class DewClient<TPolicies extends PolicySpecMap> {
           );
         }
         const chainSigOptions = params.options as ChainSigExecuteOptions | undefined;
+        const chainSigDetails = policy.policyDetails as { config?: { chainEnvironment?: string } };
+        const defaultEncoding: ChainSigEncoding | undefined =
+          chainSigDetails.config?.chainEnvironment === "NearWasm" ? "base64" : undefined;
+        const resolvedOptions =
+          defaultEncoding && !chainSigOptions?.encoding
+            ? { ...chainSigOptions, encoding: defaultEncoding }
+            : chainSigOptions;
+        const proposeOptions = resolvedOptions
+          ? (({ chainSig: _chainSig, ...rest }) => rest)(resolvedOptions)
+          : undefined;
 
         const proposal = await this.proposeChainSigTransaction({
           policyId: String(id),
           encodedTx: payload,
-          options: chainSigOptions,
+          options: proposeOptions,
         });
 
         if (!proposal.executed || !chainSigOptions?.chainSig) {
@@ -165,21 +179,15 @@ export class DewClient<TPolicies extends PolicySpecMap> {
         return { ...proposal, signedTx, broadcastTxHash };
       }
       case "NearNativeTransaction": {
-        const nearPayload = payload as NearNativeExecutionPayload;
-        if (
-          !nearPayload ||
-          typeof nearPayload !== "object" ||
-          typeof nearPayload.receiverId !== "string" ||
-          !Array.isArray(nearPayload.actions)
-        ) {
+        if (!(typeof payload === "string" || payload instanceof Uint8Array)) {
           throw new Error(
-            `Policy ${String(id)} expects { receiverId, actions } for NearNativeTransaction.`
+            `Policy ${String(id)} expects a serialized NEAR transaction (string or Uint8Array).`
           );
         }
-        return this.proposeNearActions({
+        const encodedTx = normalizeNearEncodedTx(payload as NearNativeExecutionPayload);
+        return this.proposeExecution({
           policyId: String(id),
-          receiverId: nearPayload.receiverId,
-          actions: nearPayload.actions,
+          functionArgs: encodedTx,
           options: params.options as NearCallOptions | undefined,
         });
       }
@@ -273,6 +281,44 @@ export class DewClient<TPolicies extends PolicySpecMap> {
   // ===========================================================================
   // Kernel + Policy Methods (Flattened)
   // ===========================================================================
+
+  /**
+   * Build a serialized NEAR transaction suitable for NearNative/ChainSig execution.
+   */
+  async buildNearTransaction({
+    receiverId,
+    actions,
+    signer,
+    finality,
+    options,
+  }: NearTransactionBuildParams): Promise<NearTransactionBuildResult> {
+    const provider = this.resolveNearProvider({ options });
+    const { signerId, publicKey, nonce } = await this.resolveNearTransactionSigner({
+      signer,
+      receiverId,
+      actions,
+      provider,
+      options,
+    });
+
+    const block = (await provider.block({
+      finality: finality ?? "final",
+    })) as { header: { hash: string } };
+    const blockHash = utils.serialize.base_decode(block.header.hash);
+
+    const publicKeyObj = utils.PublicKey.fromString(publicKey);
+    const transaction = transactions.createTransaction(
+      signerId,
+      publicKeyObj,
+      receiverId,
+      nonce + 1n,
+      actions,
+      blockHash
+    );
+    const encodedTx = Buffer.from(transactions.encodeTransaction(transaction)).toString("base64");
+
+    return { encodedTx, transaction, signerId, publicKey, nonce };
+  }
 
   private async callKernel({
     method,
@@ -407,40 +453,30 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     policyId,
     receiverId,
     actions,
+    signer,
     options,
   }: {
     policyId: string;
     receiverId: string;
     actions: txType.Action[];
+    signer?: NearTransactionSigner;
     options?: NearCallOptions;
   }): Promise<NearProposalResult> {
-    const serializedActions = actions.map((action) => {
-      const actionAny = action as {
-        type?: string;
-        methodName?: string;
-        args?: Buffer | string;
-        gas?: bigint;
-        deposit?: bigint;
-      };
-      if (actionAny.type === "FunctionCall") {
-        return {
-          type: "FunctionCall",
-          method_name: actionAny.methodName,
-          args:
-            actionAny.args instanceof Buffer ? actionAny.args.toString("base64") : actionAny.args,
-          gas: actionAny.gas?.toString?.() ?? actionAny.gas,
-          deposit: actionAny.deposit?.toString?.() ?? actionAny.deposit,
-        };
-      }
-      return action;
+    const resolvedSigner =
+      signer ??
+      ({
+        type: "Account",
+        nearWallet: options?.nearWallet,
+      } satisfies NearTransactionSigner);
+    const { encodedTx } = await this.buildNearTransaction({
+      receiverId,
+      actions,
+      signer: resolvedSigner,
+      options,
     });
-    const args = {
-      receiver_id: receiverId,
-      actions: serializedActions,
-    };
     const outcome = await this.callKernel({
       method: "propose_execution",
-      args: { policy_id: policyId, function_args: args },
+      args: { policy_id: policyId, function_args: encodedTx },
       options,
     });
 
@@ -892,6 +928,60 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     }
     return this.getNearAccount();
   }
+
+  private async resolveNearTransactionSigner({
+    signer,
+    receiverId,
+    actions,
+    provider,
+    options,
+  }: {
+    signer: NearTransactionSigner;
+    receiverId: string;
+    actions: txType.Action[];
+    provider: providers.JsonRpcProvider;
+    options?: NearViewOptions;
+  }): Promise<{ signerId: string; publicKey: string; nonce: bigint }> {
+    if (signer.type === "Account") {
+      const account = signer.nearWallet ?? this.getNearAccount();
+      const { publicKey, accessKey } = await account.findAccessKey(receiverId, actions);
+      return {
+        signerId: account.accountId,
+        publicKey: publicKey.toString(),
+        nonce: BigInt(accessKey.nonce),
+      };
+    }
+
+    if (signer.type === "ChainSig") {
+      const derived = await this.deriveChainSigAccount({
+        chain: "NearWasm",
+        derivationPath: signer.derivationPath,
+        nearNetwork: signer.nearNetwork,
+        options,
+      });
+      const accessKey = (await provider.query({
+        request_type: "view_access_key",
+        account_id: derived.address,
+        public_key: derived.public_key,
+        finality: "final",
+      })) as unknown as { nonce: number | string };
+      return {
+        signerId: derived.address,
+        publicKey: derived.public_key,
+        nonce: BigInt(accessKey.nonce),
+      };
+    }
+
+    return {
+      signerId: signer.signerId,
+      publicKey: signer.publicKey,
+      nonce: BigInt(signer.nonce),
+    };
+  }
+}
+
+function normalizeNearEncodedTx(encodedTx: string | Uint8Array): string {
+  return encodedTx instanceof Uint8Array ? Buffer.from(encodedTx).toString("base64") : encodedTx;
 }
 
 function normalizeChainSigEncodedTx({

@@ -48,6 +48,7 @@ Policy typing:
 - `PolicySpec` is the client-side typed wrapper used to attach builders and drive `DewClient.execute`.
 - Use `definePolicies(...)` (or `satisfies PolicySpecMap`) to preserve literal policy IDs and builder signatures so `DewClient.execute` can infer `args`.
 - For builder-backed policies, prefer `*PolicySpecWithBuilder` types to keep builders required and args typed.
+- `NearNativeTransaction` and `ChainSigTransaction` (NearWasm) expect a base64-encoded, Borsh-serialized NEAR transaction string. Use `DewClient.buildNearTransaction` to construct `encodedTx` before calling `execute` or `propose*`.
 
 ## Roadmap
 

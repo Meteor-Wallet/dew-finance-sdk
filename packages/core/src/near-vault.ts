@@ -10,12 +10,12 @@ import type {
   Asset,
   BasisPoints,
   ChainEnvironment,
+  ChainSigTransactionProposalResult,
   Deposit,
   DepositWithId,
   FungibleTokenMetadata,
   NearCallOptions,
   NearViewOptions,
-  NearProposalResult,
   Policy,
   PolicySpecMap,
   PolicyRestriction,
@@ -35,6 +35,17 @@ const DEFAULT_VAULT_CALL_GAS_TGAS = 150;
 const DEFAULT_VAULT_CALL_DEPOSIT_YOCTO = "0";
 const DEFAULT_STRATEGIST_TRANSFER_GAS_TGAS = 30;
 const DEFAULT_STRATEGIST_TRANSFER_DEPOSIT_YOCTO = "1";
+
+type DewVaultCallOptions = {
+  policyId?: string;
+  vaultGasTgas?: number;
+  vaultDepositYocto?: string;
+  callOptions?: NearCallOptions;
+  derivationPath?: string;
+  nearNetwork?: "Mainnet" | "Testnet";
+};
+
+export type DewVaultProposalResult = ChainSigTransactionProposalResult;
 
 export const DEW_VAULT_METHODS = [
   "dew_vault_update_share_prices",
@@ -350,17 +361,20 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   private readonly dewClient: DewClient<TPolicies>;
   private readonly vaultId: string;
   private readonly policyIds: Record<DewVaultMethod, string>;
+  private readonly derivationPath?: string;
 
   constructor({
     dewClient,
     vaultId,
     policyIds,
     policyIdPrefix,
+    derivationPath,
   }: {
     dewClient: DewClient<TPolicies>;
     vaultId: string;
     policyIds?: DewVaultPolicyIdMap;
     policyIdPrefix?: string;
+    derivationPath?: string;
   }) {
     this.dewClient = dewClient;
     this.vaultId = vaultId;
@@ -368,6 +382,7 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
       policyIds,
       policyIdPrefix,
     });
+    this.derivationPath = derivationPath;
   }
 
   getVaultId(): string {
@@ -391,6 +406,16 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     return policyId;
   }
 
+  private resolveDerivationPath({ override }: { override?: string }): string {
+    if (override) {
+      return override;
+    }
+    if (this.derivationPath) {
+      return this.derivationPath;
+    }
+    throw new Error("No derivation path configured for DewNearVaultClient.");
+  }
+
   private buildVaultFunctionCall({
     method,
     args,
@@ -398,12 +423,7 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   }: {
     method: DewVaultMethod;
     args: Record<string, unknown>;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
+    options?: DewVaultCallOptions;
   }): transactions.Action {
     const gasTgas = options?.vaultGasTgas ?? DEFAULT_VAULT_CALL_GAS_TGAS;
     const gas = BigInt(Math.floor(gasTgas * TGAS_TO_GAS));
@@ -453,20 +473,25 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   }: {
     method: DewVaultMethod;
     args: Record<string, unknown>;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     const policyId = this.resolvePolicyId({ method, override: options?.policyId });
     const action = this.buildVaultFunctionCall({ method, args, options });
-    return this.dewClient.proposeNearActions({
-      policyId,
+    const derivationPath = this.resolveDerivationPath({ override: options?.derivationPath });
+    const { encodedTx } = await this.dewClient.buildNearTransaction({
       receiverId: this.vaultId,
       actions: [action],
+      signer: {
+        type: "ChainSig",
+        derivationPath,
+        nearNetwork: options?.nearNetwork,
+      },
       options: options?.callOptions,
+    });
+    return this.dewClient.proposeChainSigTransaction({
+      policyId,
+      encodedTx,
+      options: { ...options?.callOptions, encoding: "base64" },
     });
   }
 
@@ -496,13 +521,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     rates: DewVaultSharePriceRate[];
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_update_share_prices",
       args: { rates },
@@ -515,13 +535,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     newConfig: VaultConfig;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_update_config",
       args: { new_config: newConfig },
@@ -534,13 +549,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     requests: DewVaultOperationSharePrice[];
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_confirm_pending_redeems",
       args: { requests },
@@ -553,13 +563,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     requests: DewVaultOperationSharePrice[];
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_process_pending_deposits",
       args: { requests },
@@ -578,13 +583,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     amount: U128String;
     receiverId: string;
     memo?: string;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_asset_transfer",
       args: {
@@ -602,13 +602,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     newMetadata: FungibleTokenMetadata;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_update_metadata",
       args: { new_metadata: newMetadata },
@@ -621,13 +616,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     accountId: string;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_add_to_whitelist",
       args: { account_id: accountId },
@@ -640,13 +630,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     accountId: string;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_remove_from_whitelist",
       args: { account_id: accountId },
@@ -659,13 +644,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     accountId: string;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_add_to_blacklist",
       args: { account_id: accountId },
@@ -678,13 +658,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     accountId: string;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_remove_from_blacklist",
       args: { account_id: accountId },
@@ -695,13 +670,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   async dewVaultEmergencyPause({
     options,
   }: {
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  } = {}): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  } = {}): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_emergency_pause",
       args: {},
@@ -712,13 +682,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   async dewVaultEmergencyUnpause({
     options,
   }: {
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  } = {}): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  } = {}): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_emergency_unpause",
       args: {},
@@ -733,13 +698,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   }: {
     requestIds: number[];
     reason: string;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_reject_pending_deposits",
       args: { request_ids: requestIds, reason },
@@ -754,13 +714,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   }: {
     requestIds: number[];
     reason: string;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_reject_pending_redeems",
       args: { request_ids: requestIds, reason },
@@ -773,13 +728,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     isDeposit: boolean;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_force_reset_flow_cap",
       args: { is_deposit: isDeposit },
@@ -796,13 +746,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     asset: Asset;
     depositFeeBps?: BasisPoints;
     withdrawalFeeBps?: BasisPoints;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_set_asset_fees",
       args: {
@@ -823,13 +768,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     asset: Asset;
     depositCutBps?: BasisPoints;
     withdrawalCutBps?: BasisPoints;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_set_protocol_fee_cuts",
       args: {
@@ -846,13 +786,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     feeRecipient: string;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_set_fee_recipient",
       args: { fee_recipient: feeRecipient },
@@ -865,13 +800,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     asset: Asset;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_claim_fees",
       args: { asset },
@@ -884,13 +814,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     asset: Asset;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_claim_protocol_fees",
       args: { asset },
@@ -901,13 +826,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   async dewVaultUnpauseAccountant({
     options,
   }: {
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  } = {}): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  } = {}): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_unpause_accountant",
       args: {},
@@ -918,13 +838,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   async dewVaultCrystallizePerformanceFee({
     options,
   }: {
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  } = {}): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  } = {}): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_crystallize_performance_fee",
       args: {},
@@ -935,13 +850,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
   async dewVaultStartVault({
     options,
   }: {
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  } = {}): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  } = {}): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_start_vault",
       args: {},
@@ -954,13 +864,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     newOwner: string;
-    options?: {
-      policyId?: string;
-      vaultGasTgas?: number;
-      vaultDepositYocto?: string;
-      callOptions?: NearCallOptions;
-    };
-  }): Promise<NearProposalResult> {
+    options?: DewVaultCallOptions;
+  }): Promise<DewVaultProposalResult> {
     return this.proposeVaultCall({
       method: "dew_vault_transfer_ownership",
       args: { new_owner: newOwner },
@@ -982,6 +887,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     receiverId,
     gasTgas,
     depositYocto,
+    derivationPath,
+    nearNetwork,
     callOptions,
   }: {
     tokenId: string;
@@ -993,8 +900,10 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     receiverId?: string;
     gasTgas?: number;
     depositYocto?: string;
+    derivationPath?: string;
+    nearNetwork?: "Mainnet" | "Testnet";
     callOptions?: NearCallOptions;
-  }): Promise<NearProposalResult> {
+  }): Promise<DewVaultProposalResult> {
     const msg = JSON.stringify({
       is_request: isRequest ?? false,
       min_shares: minShares ?? "0",
@@ -1011,11 +920,21 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
       depositYocto,
     });
 
-    return this.dewClient.proposeNearActions({
-      policyId,
+    const resolvedDerivationPath = this.resolveDerivationPath({ override: derivationPath });
+    const { encodedTx } = await this.dewClient.buildNearTransaction({
       receiverId: tokenId,
       actions: [action],
+      signer: {
+        type: "ChainSig",
+        derivationPath: resolvedDerivationPath,
+        nearNetwork,
+      },
       options: callOptions,
+    });
+    return this.dewClient.proposeChainSigTransaction({
+      policyId,
+      encodedTx,
+      options: { ...callOptions, encoding: "base64" },
     });
   }
 
@@ -1029,6 +948,8 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     minShares,
     gasTgas,
     depositYocto,
+    derivationPath,
+    nearNetwork,
     callOptions,
   }: {
     tokenId: string;
@@ -1040,8 +961,10 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     minShares?: U128String;
     gasTgas?: number;
     depositYocto?: string;
+    derivationPath?: string;
+    nearNetwork?: "Mainnet" | "Testnet";
     callOptions?: NearCallOptions;
-  }): Promise<NearProposalResult> {
+  }): Promise<DewVaultProposalResult> {
     const msg = JSON.stringify({
       is_request: isRequest ?? false,
       min_shares: minShares ?? "0",
@@ -1057,11 +980,21 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
       depositYocto,
     });
 
-    return this.dewClient.proposeNearActions({
-      policyId,
+    const resolvedDerivationPath = this.resolveDerivationPath({ override: derivationPath });
+    const { encodedTx } = await this.dewClient.buildNearTransaction({
       receiverId: tokenId,
       actions: [action],
+      signer: {
+        type: "ChainSig",
+        derivationPath: resolvedDerivationPath,
+        nearNetwork,
+      },
       options: callOptions,
+    });
+    return this.dewClient.proposeChainSigTransaction({
+      policyId,
+      encodedTx,
+      options: { ...callOptions, encoding: "base64" },
     });
   }
 

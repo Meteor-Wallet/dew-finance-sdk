@@ -3,11 +3,7 @@ import {
   DewClient,
   definePolicies,
   type NearWallet,
-  type NearNativeExecutionPayload,
-  type NearNativePolicySpec,
-  type NearNativePolicySpecWithBuilder,
 } from "../packages/core/dist/index.js";
-import { depositToIntents, withdrawFromIntents } from "../packages/core/dist/utils/intents.js";
 
 const requiredSeeds = ["OWNER_SEED_1", "OWNER_SEED_2", "OWNER_SEED_3", "STRATEGIST_SEED"];
 
@@ -19,6 +15,7 @@ if (missing.length) {
 
 const NETWORK_ID = "testnet";
 const RPC_URL = "https://rpc.testnet.near.org";
+const CHAIN_SIG_DERIVATION_PATH = process.env.CHAIN_SIG_DERIVATION_PATH;
 
 const wallets: NearWallet[] = await Promise.all(
   seeds.map((seed, i) => {
@@ -35,84 +32,72 @@ const wallets: NearWallet[] = await Promise.all(
   })
 );
 
-const emptyNearPayload: NearNativeExecutionPayload = {
-  receiverId: "receiver.testnet",
-  actions: [],
-};
-
-const policyWithoutBuilder = {
-  id: "near_policy",
-  description: "near_policy",
-  requiredRole: "owner",
-  requiredVoteCount: 1,
-  policyType: "NearNativeTransaction",
-  policyDetails: {
-    type: "NearNativeTransaction",
-    config: {
-      chainEnvironment: "NearWasm",
-      restrictions: [],
-    },
-  },
-  activationTime: "0",
-  proposalExpiryTimeNanosec: "0",
-  requiredPendingActions: [],
-} satisfies NearNativePolicySpec;
-
-const policyWithBuilder = {
-  id: "near_policy",
-  description: "near_policy",
-  requiredRole: "owner",
-  requiredVoteCount: 1,
-  policyType: "NearNativeTransaction",
-  policyDetails: {
-    type: "NearNativeTransaction",
-    config: {
-      chainEnvironment: "NearWasm",
-      restrictions: [],
-    },
-  },
-  activationTime: "0",
-  proposalExpiryTimeNanosec: "0",
-  requiredPendingActions: [],
-  builder: (args: { foo: string; bar: number }): NearNativeExecutionPayload => {
-    if (!args.foo) {
-      return emptyNearPayload;
-    }
-    return emptyNearPayload;
-  },
-} satisfies NearNativePolicySpecWithBuilder<[{ foo: string; bar: number }]>;
-
-const policyWithBuilder2 = {
-  id: "near_policy",
-  description: "near_policy",
-  requiredRole: "owner",
-  requiredVoteCount: 1,
-  policyType: "NearNativeTransaction",
-  policyDetails: {
-    type: "NearNativeTransaction",
-    config: {
-      chainEnvironment: "NearWasm",
-      restrictions: [],
-    },
-  },
-  activationTime: "0",
-  proposalExpiryTimeNanosec: "0",
-  requiredPendingActions: [],
-  builder: (args: { foo: string; bar: number; fizz: bigint }): NearNativeExecutionPayload => {
-    if (!args.foo) {
-      return emptyNearPayload;
-    }
-    if (args.fizz > 0n) {
-      return emptyNearPayload;
-    }
-    return emptyNearPayload;
-  },
-} satisfies NearNativePolicySpecWithBuilder<[{ foo: string; bar: number; fizz: bigint }]>;
-
 const policies = definePolicies({
-  policyWithoutBuilder,
-  policyWithBuilder,
-  policyWithBuilder2,
+  grant_role: {
+    id: "grant_role",
+    description: "Kernel configuration example (grant_role)",
+    requiredRole: "owner",
+    requiredVoteCount: 1,
+    policyType: "KernelConfiguration",
+    policyDetails: {
+      type: "KernelConfiguration",
+    },
+    activationTime: "0",
+    proposalExpiryTimeNanosec: "0",
+    requiredPendingActions: [],
+  },
+  near_native_policy: {
+    id: "near_native_policy",
+    description: "NearNativeTransaction example",
+    requiredRole: "owner",
+    requiredVoteCount: 1,
+    policyType: "NearNativeTransaction",
+    policyDetails: {
+      type: "NearNativeTransaction",
+      config: {
+        chainEnvironment: "NearWasm",
+        restrictions: [],
+      },
+    },
+    activationTime: "0",
+    proposalExpiryTimeNanosec: "0",
+    requiredPendingActions: [],
+  },
+  chain_sig_near_policy: {
+    id: "chain_sig_near_policy",
+    description: "ChainSigTransaction example (NearWasm)",
+    requiredRole: "strategist",
+    requiredVoteCount: 1,
+    policyType: "ChainSigTransaction",
+    policyDetails: {
+      type: "ChainSigTransaction",
+      config: {
+        derivationPath: CHAIN_SIG_DERIVATION_PATH ?? "0",
+        chainEnvironment: "NearWasm",
+        restrictions: [],
+      },
+    },
+    activationTime: "0",
+    proposalExpiryTimeNanosec: "0",
+    requiredPendingActions: [],
+  },
+  chain_sig_message_policy: {
+    id: "chain_sig_message_policy",
+    description: "ChainSigMessage example (NEP-413 intents)",
+    requiredRole: "strategist",
+    requiredVoteCount: 1,
+    policyType: "ChainSigMessage",
+    policyDetails: {
+      type: "ChainSigMessage",
+      config: {
+        derivationPath: CHAIN_SIG_DERIVATION_PATH ?? "0",
+        signMethod: "NearIntentsSwap",
+      },
+    },
+    activationTime: "0",
+    proposalExpiryTimeNanosec: "0",
+    requiredPendingActions: [],
+  },
 });
 
 const dew = new DewClient({
@@ -121,92 +106,80 @@ const dew = new DewClient({
   policies,
 });
 
-dew.execute({
-  id: "policyWithoutBuilder",
-  prebuilt: emptyNearPayload,
-});
-
-dew.execute({
-  id: "policyWithBuilder",
-  args: [{ foo: "bar", bar: 123 }],
-});
-
-dew.execute({
-  id: "policyWithBuilder2",
-  args: [{ foo: "bar", bar: 123, fizz: BigInt(456) }],
-});
-
 async function run() {
-  // Propose + Auto Execute (1 vote required by policy)
-  await dew.upsertPolicy({
-    targetPolicyId: "near_policy",
-    policy: {
-      id: "near_policy",
-      description: "near_policy",
-      requiredRole: "owner",
-      requiredVoteCount: 1,
-      policyType: "NearNativeTransaction",
-      policyDetails: {
-        type: "NearNativeTransaction",
-        config: {
-          chainEnvironment: "NearWasm",
-          restrictions: [],
-        },
+  // KernelConfiguration example
+  await dew.execute({
+    id: "grant_role",
+    prebuilt: {
+      role_id: "strategist",
+      target: {
+        type: "AccountId",
+        accountId: wallets[3].accountId,
       },
-      activationTime: "0",
-      proposalExpiryTimeNanosec: "0",
-      requiredPendingActions: [],
     },
   });
-  // Propose and vote (1 < votes required by policy)
-  const proposal = await dew.grantRole({
-    roleId: "strategist",
-    target: {
-      type: "AccountId",
-      accountId: wallets[3].accountId,
-    },
-  });
-  await dew.voteOnProposal({
-    proposalId: proposal.proposalId,
-    options: { nearWallet: wallets[1] },
-  });
-  const finalVote = await dew.voteOnProposal({
-    proposalId: proposal.proposalId,
-    options: { nearWallet: wallets[2] },
-  });
-  console.log("grant_role executed:", finalVote.executed);
 
-  const nearTx = await dew.proposeNearActions({
-    policyId: "near_policy",
+  // NearNativeTransaction example (build + encode NEAR transaction)
+  const { encodedTx: nearNativeTx } = await dew.buildNearTransaction({
     receiverId: "receiver.testnet",
     actions: [],
+    signer: { type: "Account", nearWallet: wallets[0] },
   });
-  console.log("near tx executed:", nearTx.executed);
 
-  const evmTx = await dew.proposeChainSigTransaction({
-    policyId: "evm_policy",
-    encodedTx: "0xdead",
+  await dew.execute({
+    id: "near_native_policy",
+    prebuilt: nearNativeTx,
   });
-  console.log("chain sig tx executed", evmTx);
 
-  const deposit = await depositToIntents({
-    client: dew,
-    policyId: "1",
-    tokenId: "usdc.testnet",
-    amount: "1000000",
-  });
-  console.log("intent deposit executed:", deposit.executed);
+  // ChainSigTransaction example (NearWasm)
+  if (CHAIN_SIG_DERIVATION_PATH) {
+    const { encodedTx: chainSigNearTx } = await dew.buildNearTransaction({
+      receiverId: "receiver.testnet",
+      actions: [],
+      signer: {
+        type: "ChainSig",
+        derivationPath: CHAIN_SIG_DERIVATION_PATH,
+        nearNetwork: "Testnet",
+      },
+    });
 
-  const withdraw = await withdrawFromIntents({
-    client: dew,
-    policyId: "1",
-    tokenId: "nep141:usdc.testnet",
-    amount: "500000",
-    destination: "destination.testnet",
-  });
-  console.log("intent withdraw executed:", withdraw.executed);
+    await dew.execute({
+      id: "chain_sig_near_policy",
+      prebuilt: chainSigNearTx,
+      options: { encoding: "base64" },
+    });
+  } else {
+    console.warn("Skipping ChainSigTransaction example: set CHAIN_SIG_DERIVATION_PATH.");
+  }
 
-  console.log("intent swap: missing SDK helper");
+  // ChainSigMessage example (NEP-413 payload is a JSON string)
+  if (CHAIN_SIG_DERIVATION_PATH) {
+    const intentPayload = {
+      nonce: Array.from(new Uint8Array(32)),
+      recipient: "intents.near",
+      message: JSON.stringify({
+        signer_id: "example.testnet",
+        deadline: new Date(Date.now() + 60_000).toISOString(),
+        intents: [
+          {
+            intent: "token_diff",
+            diff: {
+              "nep141:usdc.testnet": "-1",
+              "nep141:usdt.testnet": "1",
+            },
+          },
+        ],
+      }),
+      callback_url: null,
+    };
+
+    await dew.proposeExecution({
+      policyId: "chain_sig_message_policy",
+      functionArgs: JSON.stringify(intentPayload),
+    });
+  } else {
+    console.warn("Skipping ChainSigMessage example: set CHAIN_SIG_DERIVATION_PATH.");
+  }
 }
 
 run().catch((error) => {

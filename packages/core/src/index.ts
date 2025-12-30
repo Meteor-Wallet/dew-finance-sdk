@@ -31,6 +31,7 @@ export {
 export type {
   DewVaultMethod,
   DewVaultPolicyIdMap,
+  DewVaultProposalResult,
   DewVaultSharePriceRate,
   DewVaultOperationSharePrice,
   DewVaultSharePriceList,

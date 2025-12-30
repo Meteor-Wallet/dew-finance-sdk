@@ -3,7 +3,6 @@
  * @packageDocumentation
  */
 import type { Account, providers, transactions } from "near-api-js";
-import type { Action } from "near-api-js/lib/transaction";
 
 // =============================================================================
 // NEAR call defaults and options
@@ -218,9 +217,41 @@ export type PolicyType =
   | "ChainSigMessage";
 export type ChainSigExecutionPayload = string | Uint8Array;
 
-export type NearNativeExecutionPayload = {
+export type NearNativeExecutionPayload = string | Uint8Array;
+
+export type NearTransactionFinality = "final" | "optimistic" | "near-final";
+
+export type NearTransactionSigner =
+  | {
+      type: "Account";
+      nearWallet?: NearWallet;
+    }
+  | {
+      type: "ChainSig";
+      derivationPath: string;
+      nearNetwork?: "Mainnet" | "Testnet";
+    }
+  | {
+      type: "Explicit";
+      signerId: string;
+      publicKey: string;
+      nonce: bigint | number | string;
+    };
+
+export type NearTransactionBuildParams = {
   receiverId: string;
-  actions: Action[];
+  actions: transactions.Action[];
+  signer: NearTransactionSigner;
+  finality?: NearTransactionFinality;
+  options?: NearViewOptions;
+};
+
+export type NearTransactionBuildResult = {
+  encodedTx: string;
+  transaction: transactions.Transaction;
+  signerId: string;
+  publicKey: string;
+  nonce: bigint;
 };
 
 export type KernelExecutionPayload = Record<string, unknown> | string;
@@ -298,7 +329,10 @@ export type ChainSigMessagePolicySpec<TArgs extends unknown[] = unknown[]> = Pol
   TArgs
 >;
 
-export type PolicySpecMap = Record<string, PolicySpec<PolicyType, PolicyExecutionPayload, any[]>>;
+export type PolicySpecMap = Record<
+  string,
+  PolicySpec<PolicyType, PolicyExecutionPayload, unknown[]>
+>;
 
 export const definePolicies = <T extends PolicySpecMap>(policies: T): T => policies;
 
