@@ -5,7 +5,8 @@
 
 import Big from "big.js";
 import { randomBytes } from "crypto";
-import { transactions, utils } from "near-api-js";
+import { actionCreators, type Action } from "@near-js/transactions";
+import { baseEncode } from "@near-js/utils";
 import type {
   ChainEnvironment,
   ChainSigResponse,
@@ -586,10 +587,10 @@ function buildFunctionCall({
   args: Record<string, unknown>;
   gasTgas: number;
   depositYocto: string;
-}): transactions.Action {
+}): Action {
   const gas = tgasToGas({ tgas: gasTgas });
   const deposit = BigInt(depositYocto);
-  return transactions.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit);
+  return actionCreators.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit);
 }
 
 function normalizeNonce({ nonce }: { nonce?: Uint8Array | number[] }): number[] {
@@ -754,7 +755,7 @@ function formatEd25519Signature({
     return signature.startsWith("ed25519:") ? signature : `ed25519:${signature}`;
   }
   const bytes = signature instanceof Uint8Array ? signature : Uint8Array.from(signature);
-  const encoded = utils.serialize.base_encode(bytes);
+  const encoded = baseEncode(bytes);
   return `ed25519:${encoded}`;
 }
 
@@ -1246,7 +1247,7 @@ export async function swapViaIntents({
     throw new Error("No Ed25519 signature returned; proposal may require voting.");
   }
 
-  const signature = utils.serialize.base_encode(Uint8Array.from(signatureBytes));
+  const signature = baseEncode(Uint8Array.from(signatureBytes));
 
   const intentHash = await publishIntentsSwap({
     intentPayload,

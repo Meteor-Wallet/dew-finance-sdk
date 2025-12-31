@@ -33,8 +33,12 @@ import type {
   ChainSigExecuteOptions,
 } from "./types.js";
 import { sendNearTransaction, getNearProvider } from "./near.js";
-import { providers, transactions, utils } from "near-api-js";
-import type { transactions as txType } from "near-api-js";
+import { actionCreators, createTransaction, encodeTransaction } from "@near-js/transactions";
+import type { Action } from "@near-js/transactions";
+import { PublicKey } from "@near-js/crypto";
+import { baseDecode } from "@near-js/utils";
+import type { JsonRpcProvider } from "@near-js/providers";
+import type { FinalExecutionOutcome } from "@near-js/types";
 
 const TGAS_TO_GAS = 1_000_000_000_000; // 1e12
 const DEFAULT_GAS_TGAS = 150; // sensible default
@@ -82,10 +86,10 @@ type ExecuteParamUnion<TPolicies extends PolicySpecMap> = {
  * ```
  */
 export class DewClient<TPolicies extends PolicySpecMap> {
-  /** NEAR account (near-api-js Account) */
+  /** NEAR account */
   private readonly nearAccount?: NearWallet;
   /** NEAR JSON-RPC provider for views and broadcasts */
-  private readonly nearProvider?: providers.JsonRpcProvider;
+  private readonly nearProvider?: JsonRpcProvider;
   /** NEAR RPC URL fallback */
   private readonly nearRpcUrl?: string;
 
@@ -111,9 +115,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
 
   async execute(
     params: ExecuteParamUnion<TPolicies>
-  ): Promise<
-    ChainSigTransactionExecuteResult | NearProposalResult | providers.FinalExecutionOutcome
-  > {
+  ): Promise<ChainSigTransactionExecuteResult | NearProposalResult | FinalExecutionOutcome> {
     const id = params.id;
     const policy = this.policies[id];
     if (!policy) {
@@ -272,7 +274,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
   }: {
     signedTx: string | Uint8Array;
     options?: NearRpcOptions;
-  }): Promise<providers.FinalExecutionOutcome> {
+  }): Promise<FinalExecutionOutcome> {
     const { broadcastNearTransaction } = await import("./utils/broadcast.js");
     const provider = this.resolveNearProvider({ options });
     return broadcastNearTransaction({ rpcUrlOrProvider: provider, signedTx });
@@ -304,10 +306,10 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     const block = (await provider.block({
       finality: finality ?? "final",
     })) as { header: { hash: string } };
-    const blockHash = utils.serialize.base_decode(block.header.hash);
+    const blockHash = baseDecode(block.header.hash);
 
-    const publicKeyObj = utils.PublicKey.fromString(publicKey);
-    const transaction = transactions.createTransaction(
+    const publicKeyObj = PublicKey.fromString(publicKey);
+    const transaction = createTransaction(
       signerId,
       publicKeyObj,
       receiverId,
@@ -315,7 +317,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       actions,
       blockHash
     );
-    const encodedTx = Buffer.from(transactions.encodeTransaction(transaction)).toString("base64");
+    const encodedTx = Buffer.from(encodeTransaction(transaction)).toString("base64");
 
     return { encodedTx, transaction, signerId, publicKey, nonce };
   }
@@ -328,7 +330,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     method: string;
     args: Record<string, unknown>;
     options?: NearCallOptions;
-  }): Promise<providers.FinalExecutionOutcome> {
+  }): Promise<FinalExecutionOutcome> {
     const gasNumber = (options?.gasTgas ?? DEFAULT_GAS_TGAS) * TGAS_TO_GAS;
     const gas = BigInt(Math.floor(gasNumber));
     const depositStr = options?.depositYocto ?? DEFAULT_DEPOSIT_YOCTO;
@@ -339,7 +341,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       data: {
         receiverId: this.kernelId,
         actions: [
-          transactions.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit),
+          actionCreators.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit),
         ],
       },
     });
@@ -419,7 +421,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     policyId: string;
     functionArgs: Record<string, unknown> | string;
     options?: NearCallOptions;
-  }): Promise<providers.FinalExecutionOutcome> {
+  }): Promise<FinalExecutionOutcome> {
     return this.callKernel({
       method: "propose_execution",
       args: { policy_id: policyId, function_args: functionArgs },
@@ -458,7 +460,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
   }: {
     policyId: string;
     receiverId: string;
-    actions: txType.Action[];
+    actions: Action[];
     signer?: NearTransactionSigner;
     options?: NearCallOptions;
   }): Promise<NearProposalResult> {
@@ -551,7 +553,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
   }: {
     proposalId: number;
     options?: NearCallOptions;
-  }): Promise<providers.FinalExecutionOutcome> {
+  }): Promise<FinalExecutionOutcome> {
     return this.callKernel({
       method: "cancel_proposal",
       args: { proposal_id: proposalId },
@@ -639,7 +641,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     policyId: string;
     functionArgs: Record<string, unknown>;
     options?: NearCallOptions;
-  }): Promise<providers.FinalExecutionOutcome> {
+  }): Promise<FinalExecutionOutcome> {
     return this.proposeExecution({ policyId, functionArgs, options });
   }
 
@@ -901,7 +903,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     options,
   }: {
     options?: NearRpcOptions;
-  } = {}): providers.JsonRpcProvider {
+  } = {}): JsonRpcProvider {
     if (options?.nearProvider) {
       return options.nearProvider;
     }
@@ -938,8 +940,8 @@ export class DewClient<TPolicies extends PolicySpecMap> {
   }: {
     signer: NearTransactionSigner;
     receiverId: string;
-    actions: txType.Action[];
-    provider: providers.JsonRpcProvider;
+    actions: Action[];
+    provider: JsonRpcProvider;
     options?: NearViewOptions;
   }): Promise<{ signerId: string; publicKey: string; nonce: bigint }> {
     if (signer.type === "Account") {
@@ -1026,7 +1028,7 @@ function isLikelyHex({ value }: { value: string }): boolean {
  * Check if a proposal was executed immediately by inspecting the transaction outcome.
  * Looks for execution events/logs in the receipts.
  */
-function wasProposalExecuted({ outcome }: { outcome: providers.FinalExecutionOutcome }): boolean {
+function wasProposalExecuted({ outcome }: { outcome: FinalExecutionOutcome }): boolean {
   // Check for execution indicators in logs
   for (const receipt of outcome.receipts_outcome) {
     const logs = receipt.outcome.logs;
@@ -1068,7 +1070,7 @@ function wasProposalExecuted({ outcome }: { outcome: providers.FinalExecutionOut
  * Extract proposal ID from transaction outcome.
  * The kernel emits the proposal ID in logs when a proposal is created.
  */
-function extractProposalId({ outcome }: { outcome: providers.FinalExecutionOutcome }): number {
+function extractProposalId({ outcome }: { outcome: FinalExecutionOutcome }): number {
   // Look for proposal_id in logs
   for (const receipt of outcome.receipts_outcome) {
     const logs = receipt.outcome.logs;
@@ -1144,7 +1146,7 @@ function isProposalEvent(value: string): boolean {
 export function extractMPCSignatures({
   result,
 }: {
-  result: providers.FinalExecutionOutcome;
+  result: FinalExecutionOutcome;
 }): MPCSignature[] {
   const signatures: MPCSignature[] = [];
 

@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { transactions } from "near-api-js";
+import { actionCreators, type Action } from "@near-js/transactions";
 import type { DewClient } from "./client.js";
 import { DEFAULT_POLICY_ACTIVATION_TIME, DEFAULT_POLICY_EXPIRY_NS } from "./policy.js";
 import type {
@@ -424,12 +424,12 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     method: DewVaultMethod;
     args: Record<string, unknown>;
     options?: DewVaultCallOptions;
-  }): transactions.Action {
+  }): Action {
     const gasTgas = options?.vaultGasTgas ?? DEFAULT_VAULT_CALL_GAS_TGAS;
     const gas = BigInt(Math.floor(gasTgas * TGAS_TO_GAS));
     const depositYocto = options?.vaultDepositYocto ?? DEFAULT_VAULT_CALL_DEPOSIT_YOCTO;
     const deposit = BigInt(depositYocto);
-    return transactions.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit);
+    return actionCreators.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit);
   }
 
   private buildFtTransferCallAction({
@@ -446,12 +446,12 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     memo?: string;
     gasTgas?: number;
     depositYocto?: string;
-  }): transactions.Action {
+  }): Action {
     const resolvedGasTgas = gasTgas ?? DEFAULT_STRATEGIST_TRANSFER_GAS_TGAS;
     const gas = BigInt(Math.floor(resolvedGasTgas * TGAS_TO_GAS));
     const resolvedDepositYocto = depositYocto ?? DEFAULT_STRATEGIST_TRANSFER_DEPOSIT_YOCTO;
     const deposit = BigInt(resolvedDepositYocto);
-    return transactions.functionCall(
+    return actionCreators.functionCall(
       "ft_transfer_call",
       Buffer.from(
         JSON.stringify({

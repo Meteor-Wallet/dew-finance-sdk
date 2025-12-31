@@ -60,15 +60,40 @@ Policy typing:
 ## Packages
 
 - `@dew-finance/core`: DewClient, DewNearVaultClient, core types, and NEAR/ChainSig utilities (broadcasting, intents, policy builders, polling).
+- `@dew-finance/protocols`: Protocol adapters and helpers (Burrow views/actions/policies, Ref Finance swap quotes, Burrow math utilities).
+
+## Protocol adapters
+
+Lightweight helpers for protocol-specific actions and reads. These are composable building blocks and do not handle signing or execution.
+
+```ts
+import { burrow } from "@dew-finance/protocols";
+import { DewClient } from "@dew-finance/core";
+
+const client = new DewClient({ kernelId: "kernel.near", nearWallet });
+
+const action = burrow.buildBorrowAndWithdraw({
+  tokenId: "usdt.tether-token.near",
+  amount: "1000000", // Burrow internal decimals
+});
+
+const { encodedTx } = await client.buildNearTransaction({
+  receiverId: "contract.main.burrow.near",
+  actions: [action],
+  signer: { type: "ChainSig", derivationPath: "1", nearNetwork: "Mainnet" },
+});
+
+await client.proposeChainSigTransaction({ policyId: "borrow_usdt", encodedTx });
+```
 
 ## Requirements
 
 - Node.js >= 18
 - pnpm (workspace uses `pnpm@8`)
-- NEAR RPC access and a `near-api-js` Account signer
+- NEAR RPC access and an `@near-js/accounts` `Account` signer
 - Chain RPC access for ChainSig broadcasting
 
-Ledger support is planned; today the SDK uses `near-api-js` for signing.
+Ledger support is planned; today the SDK uses `@near-js/*` signers for signing.
 
 ## Local setup
 

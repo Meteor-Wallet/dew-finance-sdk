@@ -1,22 +1,21 @@
 /**
- * NEAR transaction utilities using near-api-js
+ * NEAR transaction utilities
  * @packageDocumentation
  */
 
+import { Account } from "@near-js/accounts";
+import { KeyPair } from "@near-js/crypto";
+import { JsonRpcProvider } from "@near-js/providers";
+import { KeyPairSigner } from "@near-js/signers";
 import {
-  Account,
-  providers,
-  utils,
-  keyStores,
-  KeyPair,
-  connect,
-  type ConnectConfig,
-} from "near-api-js";
+  formatNearAmount as formatNearAmountRaw,
+  parseNearAmount as parseNearAmountRaw,
+} from "@near-js/utils";
 import type { NearTransactionData, NearTransactionResult } from "./types.js";
 
 /**
- * Build and send a NEAR transaction using near-api-js
- * @param account - NEAR account (from near-api-js)
+ * Build and send a NEAR transaction
+ * @param account - NEAR account
  * @param data - Transaction data
  * @returns Final execution outcome
  */
@@ -41,13 +40,13 @@ export async function sendNearTransaction({
 }
 
 /**
- * Create a NEAR connection and account from private key
+ * Create a NEAR account from private key
  * @param config - Connection config with rpc URL, network ID, account ID, and private key
  * @returns Connected Account instance
  */
 export async function createNearAccount({
   rpcUrl,
-  networkId,
+  networkId: _networkId,
   accountId,
   privateKey,
 }: {
@@ -57,16 +56,9 @@ export async function createNearAccount({
   privateKey: string;
 }): Promise<Account> {
   const keyPair = KeyPair.fromString(privateKey as `ed25519:${string}`);
-  const keyStore = new keyStores.InMemoryKeyStore();
-  await keyStore.setKey(networkId, accountId, keyPair);
-
-  const near = await connect({
-    networkId,
-    keyStore,
-    nodeUrl: rpcUrl,
-  } as ConnectConfig);
-
-  return near.account(accountId);
+  const signer = new KeyPairSigner(keyPair);
+  const provider = new JsonRpcProvider({ url: rpcUrl });
+  return new Account(accountId, provider, signer);
 }
 
 /**
@@ -74,16 +66,16 @@ export async function createNearAccount({
  * @param rpcUrl - RPC endpoint URL
  * @returns JSON RPC provider
  */
-export function getNearProvider({ rpcUrl }: { rpcUrl: string }): providers.JsonRpcProvider {
-  return new providers.JsonRpcProvider({ url: rpcUrl });
+export function getNearProvider({ rpcUrl }: { rpcUrl: string }): JsonRpcProvider {
+  return new JsonRpcProvider({ url: rpcUrl });
 }
 
 /**
  * Convert JS amount to yoctoNEAR (10^24)
- * Defers to near-api-js utils
+ * Defers to near-js utils
  */
 export function parseNearAmount({ amount }: { amount: string }): string {
-  const parsed = utils.format.parseNearAmount(amount);
+  const parsed = parseNearAmountRaw(amount);
   if (parsed === null) {
     throw new Error(`Invalid NEAR amount: ${amount}`);
   }
@@ -92,7 +84,7 @@ export function parseNearAmount({ amount }: { amount: string }): string {
 
 /**
  * Convert yoctoNEAR to NEAR
- * Defers to near-api-js utils
+ * Defers to near-js utils
  */
 export function formatNearAmount({
   amount,
@@ -101,5 +93,5 @@ export function formatNearAmount({
   amount: string;
   decimals?: number;
 }): string {
-  return utils.format.formatNearAmount(amount, decimals);
+  return formatNearAmountRaw(amount, decimals);
 }

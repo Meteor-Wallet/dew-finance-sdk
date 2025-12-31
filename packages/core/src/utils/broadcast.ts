@@ -3,7 +3,9 @@
  * @packageDocumentation
  */
 
-import type { providers } from "near-api-js";
+import { JsonRpcProvider } from "@near-js/providers";
+import type { FinalExecutionOutcome } from "@near-js/types";
+import { SignedTransaction } from "@near-js/transactions";
 import { createPublicClient, http } from "viem";
 import type { Hex, PublicClient } from "viem";
 
@@ -18,19 +20,18 @@ export async function broadcastNearTransaction({
   rpcUrlOrProvider,
   signedTx,
 }: {
-  rpcUrlOrProvider: string | providers.JsonRpcProvider;
+  rpcUrlOrProvider: string | JsonRpcProvider;
   signedTx: string | Uint8Array;
-}): Promise<providers.FinalExecutionOutcome> {
-  const { providers: nearProviders, transactions } = await import("near-api-js");
+}): Promise<FinalExecutionOutcome> {
   const provider =
     typeof rpcUrlOrProvider === "string"
-      ? new nearProviders.JsonRpcProvider({ url: rpcUrlOrProvider })
+      ? new JsonRpcProvider({ url: rpcUrlOrProvider })
       : rpcUrlOrProvider;
 
   const txBytes = typeof signedTx === "string" ? Buffer.from(signedTx, "base64") : signedTx;
 
-  const signedTransaction = transactions.SignedTransaction.decode(txBytes);
-  return provider.sendTransaction(signedTransaction) as Promise<providers.FinalExecutionOutcome>;
+  const signedTransaction = SignedTransaction.decode(txBytes);
+  return provider.sendTransaction(signedTransaction) as Promise<FinalExecutionOutcome>;
 }
 
 /**

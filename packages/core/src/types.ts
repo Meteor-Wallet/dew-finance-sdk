@@ -2,7 +2,10 @@
  * Dew Finance SDK - Core Types
  * @packageDocumentation
  */
-import type { Account, providers, transactions } from "near-api-js";
+import type { Account } from "@near-js/accounts";
+import type { JsonRpcProvider } from "@near-js/providers";
+import type { FinalExecutionOutcome } from "@near-js/types";
+import type { Action, Transaction } from "@near-js/transactions";
 
 // =============================================================================
 // NEAR call defaults and options
@@ -11,7 +14,7 @@ import type { Account, providers, transactions } from "near-api-js";
 /** Options to override NEAR call gas/deposit for kernel method calls */
 export interface NearRpcOptions {
   /** Override NEAR JSON-RPC provider */
-  nearProvider?: providers.JsonRpcProvider;
+  nearProvider?: JsonRpcProvider;
   /** Override NEAR RPC URL (used if no provider is supplied) */
   nearRpcUrl?: string;
 }
@@ -240,7 +243,7 @@ export type NearTransactionSigner =
 
 export type NearTransactionBuildParams = {
   receiverId: string;
-  actions: transactions.Action[];
+  actions: Action[];
   signer: NearTransactionSigner;
   finality?: NearTransactionFinality;
   options?: NearViewOptions;
@@ -248,7 +251,7 @@ export type NearTransactionBuildParams = {
 
 export type NearTransactionBuildResult = {
   encodedTx: string;
-  transaction: transactions.Transaction;
+  transaction: Transaction;
   signerId: string;
   publicKey: string;
   nonce: bigint;
@@ -593,22 +596,22 @@ export interface FungibleTokenMetadata {
 // NEAR Transaction Types
 // =============================================================================
 
-/** NEAR transaction data (using near-api-js actions) */
+/** NEAR transaction data */
 export interface NearTransactionData {
   /** Receiver account ID */
   receiverId: string;
   /** Actions to execute */
-  actions: transactions.Action[];
+  actions: Action[];
 }
 
-/** NEAR-specific transaction result (near-api-js outcome) */
-export type NearTransactionResult = providers.FinalExecutionOutcome;
+/** NEAR-specific transaction result */
+export type NearTransactionResult = FinalExecutionOutcome;
 
 // =============================================================================
 // Wallet Types
 // =============================================================================
 
-/** NEAR account (direct near-api-js dependency) */
+/** NEAR account */
 export type NearWallet = Account;
 
 // =============================================================================
@@ -622,7 +625,7 @@ export interface DewClientConfig<T extends PolicySpecMap> {
   /** NEAR wallet for signing */
   nearWallet?: NearWallet;
   /** NEAR JSON-RPC provider for view calls and broadcasts */
-  nearProvider?: providers.JsonRpcProvider;
+  nearProvider?: JsonRpcProvider;
   /** NEAR RPC URL (used if no provider is supplied) */
   nearRpcUrl?: string;
   policies: T;
