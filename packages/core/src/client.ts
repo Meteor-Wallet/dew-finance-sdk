@@ -335,6 +335,16 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     const gas = BigInt(Math.floor(gasNumber));
     const depositStr = options?.depositYocto ?? DEFAULT_DEPOSIT_YOCTO;
     const deposit = BigInt(depositStr);
+    if (options?.agent) {
+      const result = await options.agent.call({
+        methodName: method,
+        args,
+        contractId: this.kernelId,
+        gas: gas.toString(),
+        deposit: deposit.toString(),
+      });
+      return result as FinalExecutionOutcome;
+    }
     const account = this.resolveNearWallet({ options });
     return sendNearTransaction({
       account,
@@ -617,6 +627,14 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     });
   }
 
+  async getLockHolder({
+    options,
+  }: {
+    options?: NearViewOptions;
+  } = {}): Promise<string | null> {
+    return this.viewKernel({ method: "get_lock_holder", args: {}, options });
+  }
+
   async canReleaseLock({
     options,
   }: {
@@ -631,6 +649,32 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     options?: NearViewOptions;
   } = {}): Promise<number> {
     return this.viewKernel({ method: "get_pending_actions_count", args: {}, options });
+  }
+
+  async ensureLock({
+    policyId,
+    options,
+  }: {
+    policyId?: string;
+    options?: NearCallOptions;
+  } = {}): Promise<{ acquired: boolean; accountId: string }> {
+    const holder = await this.getLockHolder({ options });
+    const accountId = await this.resolveCallerId({ options });
+
+    if (holder && holder !== accountId) {
+      throw new Error(`Global lock held by ${holder}`);
+    }
+
+    if (!holder) {
+      if (policyId) {
+        await this.proposeExecution({ policyId, functionArgs: {}, options });
+      } else {
+        await this.acquireLock({ options });
+      }
+      return { acquired: true, accountId };
+    }
+
+    return { acquired: false, accountId };
   }
 
   async propose({
@@ -929,6 +973,18 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       return options.nearWallet;
     }
     return this.getNearAccount();
+  }
+
+  private async resolveCallerId({
+    options,
+  }: {
+    options?: NearCallOptions;
+  } = {}): Promise<string> {
+    if (options?.agent) {
+      return options.agent.accountId();
+    }
+    const account = this.resolveNearWallet({ options });
+    return account.accountId;
   }
 
   private async resolveNearTransactionSigner({

@@ -19,6 +19,18 @@ export interface NearRpcOptions {
   nearRpcUrl?: string;
 }
 
+/** Minimal agent interface for proposing kernel executions without near-js Account */
+export interface KernelAgent {
+  call: (args: {
+    methodName: string;
+    args: Record<string, unknown>;
+    contractId?: string;
+    gas?: string;
+    deposit?: string;
+  }) => Promise<unknown>;
+  accountId: () => Promise<string>;
+}
+
 /** Options to override NEAR call gas/deposit or RPC settings */
 export interface NearCallOptions extends NearRpcOptions {
   /** Gas in TeraGas (1 TGas = 1e12 gas units) */
@@ -27,6 +39,8 @@ export interface NearCallOptions extends NearRpcOptions {
   depositYocto?: string;
   /** Override signer account for this call */
   nearWallet?: NearWallet;
+  /** Optional agent caller for kernel proposals */
+  agent?: KernelAgent;
 }
 
 /** Options to override NEAR RPC settings for view calls */
