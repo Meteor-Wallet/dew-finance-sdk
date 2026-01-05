@@ -6,10 +6,12 @@
 import { actionCreators, type Action } from "@near-js/transactions";
 import type { DewClient } from "./client.js";
 import { DEFAULT_POLICY_ACTIVATION_TIME, DEFAULT_POLICY_EXPIRY_NS } from "./policy.js";
+import { buildRestrictionSchema, buildChainSigTransactionPolicy } from "./policy-builders.js";
 import type {
   Asset,
   BasisPoints,
   ChainEnvironment,
+  ChainSigPolicySpecWithBuilder,
   ChainSigTransactionProposalResult,
   Deposit,
   DepositWithId,
@@ -45,6 +47,11 @@ type DewVaultCallOptions = {
   nearNetwork?: "Mainnet" | "Testnet";
 };
 
+type DewVaultBuilderOptions = Omit<DewVaultCallOptions, "policyId">;
+type DewVaultPolicyBuilderArgs = [Record<string, unknown>, DewVaultBuilderOptions?];
+type DewVaultPolicySpec = ChainSigPolicySpecWithBuilder<DewVaultPolicyBuilderArgs>;
+type DewVaultCallGasOptions = Pick<DewVaultCallOptions, "vaultGasTgas" | "vaultDepositYocto">;
+
 export type DewVaultProposalResult = ChainSigTransactionProposalResult;
 
 export const DEW_VAULT_METHODS = [
@@ -78,6 +85,22 @@ export type DewVaultMethod = (typeof DEW_VAULT_METHODS)[number];
 
 export type DewVaultPolicyIdMap = Partial<Record<DewVaultMethod, string>>;
 
+function buildVaultFunctionCallAction({
+  method,
+  args,
+  options,
+}: {
+  method: DewVaultMethod;
+  args: Record<string, unknown>;
+  options?: DewVaultCallGasOptions;
+}): Action {
+  const gasTgas = options?.vaultGasTgas ?? DEFAULT_VAULT_CALL_GAS_TGAS;
+  const gas = BigInt(Math.floor(gasTgas * TGAS_TO_GAS));
+  const depositYocto = options?.vaultDepositYocto ?? DEFAULT_VAULT_CALL_DEPOSIT_YOCTO;
+  const deposit = BigInt(depositYocto);
+  return actionCreators.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit);
+}
+
 export type DewVaultSharePriceRate = [Asset, U128String];
 export type DewVaultOperationSharePrice = [number, U128String];
 export type DewVaultSharePriceList = Array<[Asset, U128String]>;
@@ -87,48 +110,6 @@ export type DewVaultCurrentFlow = [U128String, U128String | null, number | null]
 export type DewVaultFlowWindowInfo = [number, number, number] | null;
 export type DewVaultAccountantData = Record<string, unknown>;
 
-function buildRestrictionSchema({
-  predicates,
-  indent = "  ",
-}: {
-  predicates: string[];
-  indent?: string;
-}): string {
-  const lines = predicates.map((predicate) => `${indent}${predicate}`);
-  return `and(\n${lines.join(",\n")}\n)`;
-}
-
-function buildChainSigTransactionPolicy(params: {
-  policyId: string;
-  description: string;
-  requiredRole: string;
-  requiredVoteCount: number;
-  derivationPath: string;
-  chainEnvironment: ChainEnvironment;
-  restrictions: PolicyRestriction[];
-  activationTime: string;
-  proposalExpiryTimeNanosec: string;
-  requiredPendingActions: string[];
-}): Policy {
-  return {
-    id: params.policyId,
-    description: params.description,
-    requiredRole: params.requiredRole,
-    requiredVoteCount: params.requiredVoteCount,
-    policyType: "ChainSigTransaction",
-    policyDetails: {
-      type: "ChainSigTransaction",
-      config: {
-        derivationPath: params.derivationPath,
-        chainEnvironment: params.chainEnvironment,
-        restrictions: params.restrictions,
-      },
-    },
-    activationTime: params.activationTime,
-    proposalExpiryTimeNanosec: params.proposalExpiryTimeNanosec,
-    requiredPendingActions: params.requiredPendingActions,
-  };
-}
 
 export function createDewVaultPolicyIdMap({
   policyIds,
@@ -177,7 +158,7 @@ export function createDewVaultPolicyList({
   activationTime?: string;
   proposalExpiryTimeNanosec?: string;
   requiredPendingActions?: string[];
-}): Array<[string, Policy]> {
+}): Array<[string, DewVaultPolicySpec]> {
   const policyIdMap = createDewVaultPolicyIdMap({ policyIds, policyIdPrefix });
   const resolvedDescriptionPrefix = descriptionPrefix ?? "Dew Vault policy for";
   const resolvedChainEnvironment = chainEnvironment ?? "NearWasm";
@@ -233,7 +214,21 @@ export function createDewVaultPolicyList({
       proposalExpiryTimeNanosec: resolvedProposalExpiryTimeNanosec,
       requiredPendingActions: resolvedPendingActions,
     });
-    return [policyId, policy];
+    const builder: DewVaultPolicySpec["builder"] = (args, options) => {
+      const action = buildVaultFunctionCallAction({ method, args, options });
+      const resolvedDerivationPath = options?.derivationPath ?? derivationPath;
+      return {
+        receiverId: vaultId,
+        actions: [action],
+        signer: {
+          type: "ChainSig",
+          derivationPath: resolvedDerivationPath,
+          nearNetwork: options?.nearNetwork,
+        },
+        options: options?.callOptions,
+      };
+    };
+    return [policyId, { ...policy, builder }];
   });
 }
 
@@ -416,22 +411,6 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     throw new Error("No derivation path configured for DewNearVaultClient.");
   }
 
-  private buildVaultFunctionCall({
-    method,
-    args,
-    options,
-  }: {
-    method: DewVaultMethod;
-    args: Record<string, unknown>;
-    options?: DewVaultCallOptions;
-  }): Action {
-    const gasTgas = options?.vaultGasTgas ?? DEFAULT_VAULT_CALL_GAS_TGAS;
-    const gas = BigInt(Math.floor(gasTgas * TGAS_TO_GAS));
-    const depositYocto = options?.vaultDepositYocto ?? DEFAULT_VAULT_CALL_DEPOSIT_YOCTO;
-    const deposit = BigInt(depositYocto);
-    return actionCreators.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit);
-  }
-
   private buildFtTransferCallAction({
     receiverId,
     amount,
@@ -476,7 +455,7 @@ export class DewNearVaultClient<TPolicies extends PolicySpecMap> {
     options?: DewVaultCallOptions;
   }): Promise<DewVaultProposalResult> {
     const policyId = this.resolvePolicyId({ method, override: options?.policyId });
-    const action = this.buildVaultFunctionCall({ method, args, options });
+    const action = buildVaultFunctionCallAction({ method, args, options });
     const derivationPath = this.resolveDerivationPath({ override: options?.derivationPath });
     const { encodedTx } = await this.dewClient.buildNearTransaction({
       receiverId: this.vaultId,

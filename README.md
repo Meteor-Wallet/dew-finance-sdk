@@ -48,7 +48,7 @@ Policy typing:
 - `PolicySpec` is the client-side typed wrapper used to attach builders and drive `DewClient.execute`.
 - Use `definePolicies(...)` (or `satisfies PolicySpecMap`) to preserve literal policy IDs and builder signatures so `DewClient.execute` can infer `args`.
 - For builder-backed policies, prefer `*PolicySpecWithBuilder` types to keep builders required and args typed.
-- `NearNativeTransaction` and `ChainSigTransaction` (NearWasm) expect a base64-encoded, Borsh-serialized NEAR transaction string. Use `DewClient.buildNearTransaction` to construct `encodedTx` before calling `execute` or `propose*`.
+- `NearNativeTransaction` and `ChainSigTransaction` (NearWasm) expect a base64-encoded, Borsh-serialized NEAR transaction string. Use `DewClient.buildNearTransaction` to construct `encodedTx`, or return `NearTransactionBuildParams` from a policy builder so `DewClient.execute` can build it for you.
 
 ## Roadmap
 
@@ -88,8 +88,8 @@ await client.proposeChainSigTransaction({ policyId: "borrow_usdt", encodedTx });
 
 ## Requirements
 
-- Node.js >= 18
-- pnpm (workspace uses `pnpm@8`)
+- Node.js >= 22
+- pnpm (workspace uses `pnpm@10.26.2`)
 - NEAR RPC access and an `@near-js/accounts` `Account` signer
 - Chain RPC access for ChainSig broadcasting
 

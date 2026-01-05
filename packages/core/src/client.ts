@@ -51,11 +51,11 @@ type ExecuteOptionsFor<TPolicy> = TPolicy extends { policyType: "ChainSigTransac
 type ExecuteParams<
   TPolicies extends PolicySpecMap,
   P extends keyof TPolicies,
-> = TPolicies[P] extends { builder: (...args: infer A) => PolicyExecutionPayload }
+> = TPolicies[P] extends { builder: (...args: infer A) => infer PPayload }
   ? {
       id: P;
       options?: ExecuteOptionsFor<TPolicies[P]>;
-    } & ({ args: A; prebuilt?: never } | { prebuilt: PolicyExecutionPayload; args?: never })
+    } & ({ args: A; prebuilt?: never } | { prebuilt: PPayload; args?: never })
   : {
       id: P;
       prebuilt: PolicyExecutionPayload;
@@ -129,18 +129,26 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       if (!declaredBuilder) {
         throw new Error(`Policy ${String(id)} does not define a builder.`);
       }
-      payload = declaredBuilder(...params.args);
+      payload = declaredBuilder(...params.args) as PolicyExecutionPayload;
     } else if ("prebuilt" in params) {
-      payload = params.prebuilt;
+      payload = params.prebuilt as PolicyExecutionPayload;
     }
 
     if (payload === undefined) {
       throw new Error(`Policy ${String(id)} execution payload is missing.`);
     }
 
+    const buildParams = isNearTransactionBuildParams(payload) ? payload : undefined;
+
     switch (policy.policyType) {
       case "ChainSigTransaction": {
-        if (!(typeof payload === "string" || payload instanceof Uint8Array)) {
+        let encodedTx: string | Uint8Array;
+        if (buildParams) {
+          const built = await this.buildNearTransaction(buildParams);
+          encodedTx = built.encodedTx;
+        } else if (typeof payload === "string" || payload instanceof Uint8Array) {
+          encodedTx = payload;
+        } else {
           throw new Error(
             `Policy ${String(id)} expects a serialized transaction (string or Uint8Array).`
           );
@@ -159,7 +167,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
 
         const proposal = await this.proposeChainSigTransaction({
           policyId: String(id),
-          encodedTx: payload,
+          encodedTx,
           options: proposeOptions,
         });
 
@@ -181,19 +189,32 @@ export class DewClient<TPolicies extends PolicySpecMap> {
         return { ...proposal, signedTx, broadcastTxHash };
       }
       case "NearNativeTransaction": {
-        if (!(typeof payload === "string" || payload instanceof Uint8Array)) {
+        let encodedTx: string | Uint8Array;
+        if (buildParams) {
+          const built = await this.buildNearTransaction(buildParams);
+          encodedTx = built.encodedTx;
+        } else if (typeof payload === "string" || payload instanceof Uint8Array) {
+          encodedTx = payload;
+        } else {
           throw new Error(
             `Policy ${String(id)} expects a serialized NEAR transaction (string or Uint8Array).`
           );
         }
-        const encodedTx = normalizeNearEncodedTx(payload as NearNativeExecutionPayload);
+        const normalizedTx = normalizeNearEncodedTx(encodedTx as NearNativeExecutionPayload);
         return this.proposeExecution({
           policyId: String(id),
-          functionArgs: encodedTx,
+          functionArgs: normalizedTx,
           options: params.options as NearCallOptions | undefined,
         });
       }
       case "KernelConfiguration": {
+        if (buildParams) {
+          throw new Error(
+            `Policy ${String(
+              id
+            )} expects function args (object or string), not a transaction builder payload.`
+          );
+        }
         if (!(typeof payload === "string" || typeof payload === "object")) {
           throw new Error(
             `Policy ${String(id)} expects function args (object or string) for KernelConfiguration.`
@@ -1036,6 +1057,20 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       nonce: BigInt(signer.nonce),
     };
   }
+}
+
+function isNearTransactionBuildParams(payload: unknown): payload is NearTransactionBuildParams {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+  const candidate = payload as NearTransactionBuildParams;
+  return (
+    typeof candidate.receiverId === "string" &&
+    Array.isArray(candidate.actions) &&
+    typeof candidate.signer === "object" &&
+    candidate.signer !== null &&
+    "type" in candidate.signer
+  );
 }
 
 function normalizeNearEncodedTx(encodedTx: string | Uint8Array): string {

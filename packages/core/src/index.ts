@@ -45,5 +45,12 @@ export type {
 // Policy defaults
 export { DEFAULT_POLICY_ACTIVATION_TIME, DEFAULT_POLICY_EXPIRY_NS } from "./policy.js";
 
+// Policy builders
+export {
+  buildRestrictionSchema,
+  buildChainSigTransactionPolicy,
+  buildKernelConfigPolicy,
+} from "./policy-builders.js";
+
 // Shared utilities
 export * from "./utils/index.js";

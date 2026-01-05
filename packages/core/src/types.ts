@@ -276,7 +276,8 @@ export type KernelExecutionPayload = Record<string, unknown> | string;
 export type PolicyExecutionPayload =
   | ChainSigExecutionPayload
   | NearNativeExecutionPayload
-  | KernelExecutionPayload;
+  | KernelExecutionPayload
+  | NearTransactionBuildParams;
 
 export type PolicyDetailsByType = {
   KernelConfiguration: KernelConfigPolicyDetails;
@@ -315,21 +316,29 @@ export type PolicySpecWithBuilder<
 
 export type ChainSigPolicySpec<TArgs extends unknown[] = unknown[]> = PolicySpec<
   "ChainSigTransaction",
-  ChainSigExecutionPayload,
+  ChainSigExecutionPayload | NearTransactionBuildParams,
   TArgs
 >;
 
 export type ChainSigPolicySpecWithBuilder<TArgs extends unknown[] = unknown[]> =
-  PolicySpecWithBuilder<"ChainSigTransaction", ChainSigExecutionPayload, TArgs>;
+  PolicySpecWithBuilder<
+    "ChainSigTransaction",
+    ChainSigExecutionPayload | NearTransactionBuildParams,
+    TArgs
+  >;
 
 export type NearNativePolicySpec<TArgs extends unknown[] = unknown[]> = PolicySpec<
   "NearNativeTransaction",
-  NearNativeExecutionPayload,
+  NearNativeExecutionPayload | NearTransactionBuildParams,
   TArgs
 >;
 
 export type NearNativePolicySpecWithBuilder<TArgs extends unknown[] = unknown[]> =
-  PolicySpecWithBuilder<"NearNativeTransaction", NearNativeExecutionPayload, TArgs>;
+  PolicySpecWithBuilder<
+    "NearNativeTransaction",
+    NearNativeExecutionPayload | NearTransactionBuildParams,
+    TArgs
+  >;
 
 export type KernelConfigPolicySpec<TArgs extends unknown[] = unknown[]> = PolicySpec<
   "KernelConfiguration",
