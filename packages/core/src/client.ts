@@ -51,16 +51,12 @@ type ExecuteOptionsFor<TPolicy> = TPolicy extends { policyType: "ChainSigTransac
 type ExecuteParams<
   TPolicies extends PolicySpecMap,
   P extends keyof TPolicies,
-> = TPolicies[P] extends { builder: (...args: infer A) => infer PPayload }
+> = TPolicies[P] extends { builder?: (...args: infer A) => PolicyExecutionPayload }
   ? {
       id: P;
       options?: ExecuteOptionsFor<TPolicies[P]>;
-    } & ({ args: A; prebuilt?: never } | { prebuilt: PPayload; args?: never })
-  : {
-      id: P;
-      prebuilt: PolicyExecutionPayload;
-      options?: ExecuteOptionsFor<TPolicies[P]>;
-    };
+    } & ({ args: A; prebuilt?: never } | { prebuilt: true; args?: never })
+  : never;
 
 type ExecuteParamUnion<TPolicies extends PolicySpecMap> = {
   [P in keyof TPolicies]: ExecuteParams<TPolicies, P>;
@@ -123,15 +119,16 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     }
 
     const declaredBuilder = policy.builder;
+    if (!declaredBuilder) {
+      throw new Error(`Policy ${String(id)} does not define a builder for execute().`);
+    }
+
     let payload: PolicyExecutionPayload | undefined;
 
     if ("args" in params && params.args !== undefined) {
-      if (!declaredBuilder) {
-        throw new Error(`Policy ${String(id)} does not define a builder.`);
-      }
       payload = declaredBuilder(...params.args) as PolicyExecutionPayload;
     } else if ("prebuilt" in params) {
-      payload = params.prebuilt as PolicyExecutionPayload;
+      payload = declaredBuilder() as PolicyExecutionPayload;
     }
 
     if (payload === undefined) {
