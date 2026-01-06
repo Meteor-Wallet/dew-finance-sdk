@@ -89,7 +89,7 @@ await client.proposeChainSigTransaction({ policyId: "borrow_usdt", encodedTx });
 ## Requirements
 
 - Node.js >= 22
-- pnpm (workspace uses `pnpm@10.26.2`)
+- bun (workspace uses `bun@1.3.0`)
 - NEAR RPC access and an `@near-js/accounts` `Account` signer
 - Chain RPC access for ChainSig broadcasting
 
@@ -100,8 +100,8 @@ Ledger support is planned; today the SDK uses `@near-js/*` signers for signing.
 This repo is not published to npm yet. Use the workspace directly:
 
 ```bash
-pnpm install
-pnpm build
+bun install
+bun run build
 ```
 
 ## Related repositories
