@@ -909,15 +909,8 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       return { updatedPolicies: [] };
     }
 
-    //
-    console.log("existing", JSON.stringify(existingPolicies, null, 2))
-    console.log("to upsert", JSON.stringify(updates, null, 2))
-    console.log("all", JSON.stringify(this.policies, null, 2))
-
-
-    // const result = await this.batchUpdatePolicies({ policies: updates, options });
-    const result = undefined;
-    return { updatedPolicies: updates, result};
+    const result = await this.batchUpdatePolicies({ policies: updates, options });
+    return { updatedPolicies: updates, result };
   }
 
   async storeData({

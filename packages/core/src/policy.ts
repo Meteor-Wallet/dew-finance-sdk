@@ -63,7 +63,7 @@ function sortForStableStringify(value: unknown): unknown {
     const sorted: Record<string, unknown> = {};
     for (const key of Object.keys(record).sort()) {
       const entry = record[key];
-      if (entry === undefined) {
+      if (entry === undefined || entry === null) {
         continue;
       }
       sorted[key] = sortForStableStringify(entry);
