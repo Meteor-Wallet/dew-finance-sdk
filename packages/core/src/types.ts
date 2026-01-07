@@ -462,10 +462,8 @@ export interface ChainSigMessageConfig {
 /** Chain signature signing method */
 export type ChainSigSignMethod = "NearIntentsSwap";
 
-/** Role target identifier */
-export type RoleTarget =
-  | { type: "AccountId"; accountId: string }
-  | { type: "Codehash"; codehash: string };
+/** Role target identifier (contract enum) */
+export type RoleTarget = { AccountId: string } | { Codehash: string };
 
 /** Proposal */
 export interface Proposal {
