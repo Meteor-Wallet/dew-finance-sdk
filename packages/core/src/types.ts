@@ -288,10 +288,10 @@ export type PolicyDetailsByType = {
 
 type PolicySpecBase<TType extends PolicyType = PolicyType> = Omit<
   Policy,
-  "policyType" | "policyDetails"
+  "policy_type" | "policy_details"
 > & {
-  policyType: TType;
-  policyDetails: PolicyDetailsByType[TType];
+  policy_type: TType;
+  policy_details: PolicyDetailsByType[TType];
 };
 
 export type PolicyBuilder<TArgs extends unknown[], TPayload> = {
@@ -363,7 +363,7 @@ export type PolicySpecMap = Record<
 export const definePolicies = <T extends PolicySpecMap>(policies: T): T => policies;
 
 type PolicyTypeAndDetails = {
-  [K in PolicyType]: { policyType: K; policyDetails: PolicyDetailsByType[K] };
+  [K in PolicyType]: { policy_type: K; policy_details: PolicyDetailsByType[K] };
 }[PolicyType];
 
 /** Policy definition */
@@ -373,15 +373,15 @@ export type Policy = {
   /** Policy description */
   description?: string;
   /** Role required to propose under this policy */
-  requiredRole: string;
+  required_role: string;
   /** Number of votes required to approve */
-  requiredVoteCount: number;
+  required_vote_count: number;
   /** Nano timestamp when this policy becomes active (for activation delays) */
-  activationTime: string;
+  activation_time: string;
   /** Proposal expiry duration in nanoseconds */
-  proposalExpiryTimeNanosec: string;
+  proposal_expiry_time_nanosec: string;
   /** Follow-up actions that must be completed after this policy executes */
-  requiredPendingActions: string[];
+  required_pending_actions: string[];
 } & PolicyTypeAndDetails;
 
 /** Emergency configuration */
@@ -397,23 +397,18 @@ export interface EmergencyConfig {
 }
 
 type ChainSigPolicyDetails = {
-  type: "ChainSigTransaction";
-  config: ChainSigTransactionConfig;
+  ChainSigTransaction: ChainSigTransactionConfig;
 };
 
 type NearNativePolicyDetails = {
-  type: "NearNativeTransaction";
-  config: NearNativeTransactionConfig;
+  NearNativeTransaction: NearNativeTransactionConfig;
 };
 
 type ChainSigMessagePolicyDetails = {
-  type: "ChainSigMessage";
-  config: ChainSigMessageConfig;
+  ChainSigMessage: ChainSigMessageConfig;
 };
 
-type KernelConfigPolicyDetails = {
-  type: "KernelConfiguration";
-};
+type KernelConfigPolicyDetails = "KernelConfiguration";
 
 /** Policy-specific configuration details */
 export type PolicyDetails =
@@ -436,7 +431,7 @@ export type PolicyRestriction = {
 /** NEAR native transaction configuration */
 export interface NearNativeTransactionConfig {
   /** Chain environment where transactions can execute */
-  chainEnvironment: ChainEnvironment;
+  chain_environment: ChainEnvironment;
   /** Restrictions on transactions */
   restrictions: PolicyRestriction[];
 }
@@ -444,9 +439,9 @@ export interface NearNativeTransactionConfig {
 /** Chain signature transaction configuration */
 export interface ChainSigTransactionConfig {
   /** BIP32 derivation path */
-  derivationPath: string;
+  derivation_path: string;
   /** Chain environment where transactions can execute */
-  chainEnvironment: ChainEnvironment;
+  chain_environment: ChainEnvironment;
   /** Restrictions on transactions */
   restrictions: PolicyRestriction[];
 }
@@ -454,9 +449,9 @@ export interface ChainSigTransactionConfig {
 /** Chain signature message configuration */
 export interface ChainSigMessageConfig {
   /** BIP32 derivation path */
-  derivationPath: string;
+  derivation_path: string;
   /** Signing method */
-  signMethod: ChainSigSignMethod;
+  sign_method: ChainSigSignMethod;
 }
 
 /** Chain signature signing method */
@@ -650,12 +645,4 @@ export interface DewClientConfig<T extends PolicySpecMap> {
   /** NEAR RPC URL (used if no provider is supplied) */
   nearRpcUrl?: string;
   policies: T;
-}
-
-/** Role definition */
-export interface Role {
-  /** Role ID */
-  id: string;
-  /** Role description */
-  description?: string;
 }

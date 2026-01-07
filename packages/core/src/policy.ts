@@ -27,16 +27,16 @@ function pickPolicyForComparison(
   return {
     id,
     description,
-    requiredRole: readField(raw, "requiredRole", "required_role"),
-    requiredVoteCount: readField(raw, "requiredVoteCount", "required_vote_count"),
-    proposalExpiryTimeNanosec: readField(
+    required_role: readField(raw, "requiredRole", "required_role"),
+    required_vote_count: readField(raw, "requiredVoteCount", "required_vote_count"),
+    proposal_expiry_time_nanosec: readField(
       raw,
       "proposalExpiryTimeNanosec",
       "proposal_expiry_time_nanosec"
     ),
-    requiredPendingActions: readField(raw, "requiredPendingActions", "required_pending_actions"),
-    policyType: readField(raw, "policyType", "policy_type"),
-    policyDetails: readField(raw, "policyDetails", "policy_details"),
+    required_pending_actions: readField(raw, "requiredPendingActions", "required_pending_actions"),
+    policy_type: readField(raw, "policyType", "policy_type"),
+    policy_details: readField(raw, "policyDetails", "policy_details"),
   };
 }
 

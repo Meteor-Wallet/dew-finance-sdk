@@ -48,20 +48,19 @@ export function buildChainSigTransactionPolicy({
   return {
     id: policyId,
     description,
-    requiredRole,
-    requiredVoteCount,
-    policyType: "ChainSigTransaction",
-    policyDetails: {
-      type: "ChainSigTransaction",
-      config: {
-        derivationPath,
-        chainEnvironment: chainEnvironment ?? "NearWasm",
+    required_role: requiredRole,
+    required_vote_count: requiredVoteCount,
+    policy_type: "ChainSigTransaction",
+    policy_details: {
+      ChainSigTransaction: {
+        derivation_path: derivationPath,
+        chain_environment: chainEnvironment ?? "NearWasm",
         restrictions,
       },
     },
-    activationTime: activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME,
-    proposalExpiryTimeNanosec: proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS,
-    requiredPendingActions: requiredPendingActions ?? [],
+    activation_time: activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME,
+    proposal_expiry_time_nanosec: proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS,
+    required_pending_actions: requiredPendingActions ?? [],
   };
 }
 
@@ -85,14 +84,12 @@ export function buildKernelConfigPolicy({
   return {
     id: policyId,
     description,
-    requiredRole,
-    requiredVoteCount,
-    policyType: "KernelConfiguration",
-    policyDetails: {
-      type: "KernelConfiguration",
-    },
-    activationTime: activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME,
-    proposalExpiryTimeNanosec: proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS,
-    requiredPendingActions: requiredPendingActions ?? [],
+    required_role: requiredRole,
+    required_vote_count: requiredVoteCount,
+    policy_type: "KernelConfiguration",
+    policy_details: "KernelConfiguration",
+    activation_time: activationTime ?? DEFAULT_POLICY_ACTIVATION_TIME,
+    proposal_expiry_time_nanosec: proposalExpiryTimeNanosec ?? DEFAULT_POLICY_EXPIRY_NS,
+    required_pending_actions: requiredPendingActions ?? [],
   };
 }

@@ -32,33 +32,30 @@ const policies = definePolicies({
   foo_kernel_no_builder: {
     id: "foo_kernel_no_builder",
     description: "KernelConfiguration example (no builder)",
-    requiredRole: "owner",
-    requiredVoteCount: 1,
-    policyType: "KernelConfiguration",
-    policyDetails: {
-      type: "KernelConfiguration",
-    },
-    activationTime: "0",
-    proposalExpiryTimeNanosec: "0",
-    requiredPendingActions: [],
+    required_role: "owner",
+    required_vote_count: 1,
+    policy_type: "KernelConfiguration",
+    policy_details: "KernelConfiguration",
+    activation_time: "0",
+    proposal_expiry_time_nanosec: "0",
+    required_pending_actions: [],
   },
   fizz_chain_sig_prebuilt: {
     id: "fizz_chain_sig_prebuilt",
     description: "ChainSigTransaction example with builder (prebuilt)",
-    requiredRole: "strategist",
-    requiredVoteCount: 1,
-    policyType: "ChainSigTransaction",
-    policyDetails: {
-      type: "ChainSigTransaction",
-      config: {
-        derivationPath: DEFAULT_DERIVATION_PATH,
-        chainEnvironment: "NearWasm",
+    required_role: "strategist",
+    required_vote_count: 1,
+    policy_type: "ChainSigTransaction",
+    policy_details: {
+      ChainSigTransaction: {
+        derivation_path: DEFAULT_DERIVATION_PATH,
+        chain_environment: "NearWasm",
         restrictions: [],
       },
     },
-    activationTime: "0",
-    proposalExpiryTimeNanosec: "0",
-    requiredPendingActions: [],
+    activation_time: "0",
+    proposal_expiry_time_nanosec: "0",
+    required_pending_actions: [],
     builder: () => ({
       receiverId: "bar.receiver.testnet",
       actions: [],
@@ -72,20 +69,19 @@ const policies = definePolicies({
   buzz_chain_sig_args: {
     id: "buzz_chain_sig_args",
     description: "ChainSigTransaction example with builder (args)",
-    requiredRole: "strategist",
-    requiredVoteCount: 1,
-    policyType: "ChainSigTransaction",
-    policyDetails: {
-      type: "ChainSigTransaction",
-      config: {
-        derivationPath: DEFAULT_DERIVATION_PATH,
-        chainEnvironment: "NearWasm",
+    required_role: "strategist",
+    required_vote_count: 1,
+    policy_type: "ChainSigTransaction",
+    policy_details: {
+      ChainSigTransaction: {
+        derivation_path: DEFAULT_DERIVATION_PATH,
+        chain_environment: "NearWasm",
         restrictions: [],
       },
     },
-    activationTime: "0",
-    proposalExpiryTimeNanosec: "0",
-    requiredPendingActions: [],
+    activation_time: "0",
+    proposal_expiry_time_nanosec: "0",
+    required_pending_actions: [],
     builder: (receiverId: string, derivationPath: string) => ({
       receiverId,
       actions: [],

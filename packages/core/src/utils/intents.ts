@@ -221,20 +221,19 @@ function buildChainSigTransactionPolicy(params: {
   return {
     id: params.policyId,
     description: params.description,
-    requiredRole: params.requiredRole,
-    requiredVoteCount: params.requiredVoteCount,
-    policyType: "ChainSigTransaction",
-    policyDetails: {
-      type: "ChainSigTransaction",
-      config: {
-        derivationPath: params.derivationPath,
-        chainEnvironment: params.chainEnvironment,
+    required_role: params.requiredRole,
+    required_vote_count: params.requiredVoteCount,
+    policy_type: "ChainSigTransaction",
+    policy_details: {
+      ChainSigTransaction: {
+        derivation_path: params.derivationPath,
+        chain_environment: params.chainEnvironment,
         restrictions: params.restrictions,
       },
     },
-    activationTime: params.activationTime,
-    proposalExpiryTimeNanosec: params.proposalExpiryTimeNanosec,
-    requiredPendingActions: params.requiredPendingActions,
+    activation_time: params.activationTime,
+    proposal_expiry_time_nanosec: params.proposalExpiryTimeNanosec,
+    required_pending_actions: params.requiredPendingActions,
   };
 }
 
@@ -252,19 +251,18 @@ function buildChainSigMessagePolicy(params: {
   return {
     id: params.policyId,
     description: params.description,
-    requiredRole: params.requiredRole,
-    requiredVoteCount: params.requiredVoteCount,
-    policyType: "ChainSigMessage",
-    policyDetails: {
-      type: "ChainSigMessage",
-      config: {
-        derivationPath: params.derivationPath,
-        signMethod: params.signMethod,
+    required_role: params.requiredRole,
+    required_vote_count: params.requiredVoteCount,
+    policy_type: "ChainSigMessage",
+    policy_details: {
+      ChainSigMessage: {
+        derivation_path: params.derivationPath,
+        sign_method: params.signMethod,
       },
     },
-    activationTime: params.activationTime,
-    proposalExpiryTimeNanosec: params.proposalExpiryTimeNanosec,
-    requiredPendingActions: params.requiredPendingActions,
+    activation_time: params.activationTime,
+    proposal_expiry_time_nanosec: params.proposalExpiryTimeNanosec,
+    required_pending_actions: params.requiredPendingActions,
   };
 }
 

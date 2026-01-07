@@ -45,7 +45,7 @@ const TGAS_TO_GAS = 1_000_000_000_000; // 1e12
 const DEFAULT_GAS_TGAS = 150; // sensible default
 const DEFAULT_DEPOSIT_YOCTO = "0";
 
-type ExecuteOptionsFor<TPolicy> = TPolicy extends { policyType: "ChainSigTransaction" }
+type ExecuteOptionsFor<TPolicy> = TPolicy extends { policy_type: "ChainSigTransaction" }
   ? ChainSigExecuteOptions
   : NearCallOptions;
 
@@ -138,7 +138,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
 
     const buildParams = isNearTransactionBuildParams(payload) ? payload : undefined;
 
-    switch (policy.policyType) {
+    switch (policy.policy_type) {
       case "ChainSigTransaction": {
         let encodedTx: string | Uint8Array;
         if (buildParams) {
@@ -152,9 +152,14 @@ export class DewClient<TPolicies extends PolicySpecMap> {
           );
         }
         const chainSigOptions = params.options as ChainSigExecuteOptions | undefined;
-        const chainSigDetails = policy.policyDetails as { config?: { chainEnvironment?: string } };
+        const chainSigDetails =
+          typeof policy.policy_details === "string"
+            ? undefined
+            : "ChainSigTransaction" in policy.policy_details
+              ? policy.policy_details.ChainSigTransaction
+              : undefined;
         const defaultEncoding: ChainSigEncoding | undefined =
-          chainSigDetails.config?.chainEnvironment === "NearWasm" ? "base64" : undefined;
+          chainSigDetails?.chain_environment === "NearWasm" ? "base64" : undefined;
         const resolvedOptions =
           defaultEncoding && !chainSigOptions?.encoding
             ? { ...chainSigOptions, encoding: defaultEncoding }
@@ -905,9 +910,9 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     }
 
     //
-    console.log("existing", existingPolicies)
-    console.log("to upsert", updates)
-    console.log("all", this.policies)
+    console.log("existing", JSON.stringify(existingPolicies, null, 2))
+    console.log("to upsert", JSON.stringify(updates, null, 2))
+    console.log("all", JSON.stringify(this.policies, null, 2))
 
 
     // const result = await this.batchUpdatePolicies({ policies: updates, options });

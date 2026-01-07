@@ -56,20 +56,19 @@ function buildChainSigTransactionPolicy({
   return {
     id: policyId,
     description,
-    requiredRole,
-    requiredVoteCount,
-    policyType: "ChainSigTransaction",
-    policyDetails: {
-      type: "ChainSigTransaction",
-      config: {
-        derivationPath,
-        chainEnvironment,
+    required_role: requiredRole,
+    required_vote_count: requiredVoteCount,
+    policy_type: "ChainSigTransaction",
+    policy_details: {
+      ChainSigTransaction: {
+        derivation_path: derivationPath,
+        chain_environment: chainEnvironment,
         restrictions,
       },
     },
-    activationTime,
-    proposalExpiryTimeNanosec,
-    requiredPendingActions,
+    activation_time: activationTime,
+    proposal_expiry_time_nanosec: proposalExpiryTimeNanosec,
+    required_pending_actions: requiredPendingActions,
   };
 }
 
