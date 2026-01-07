@@ -110,7 +110,6 @@ export type DewVaultCurrentFlow = [U128String, U128String | null, number | null]
 export type DewVaultFlowWindowInfo = [number, number, number] | null;
 export type DewVaultAccountantData = Record<string, unknown>;
 
-
 export function createDewVaultPolicyIdMap({
   policyIds,
   policyIdPrefix,

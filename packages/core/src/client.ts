@@ -33,6 +33,7 @@ import type {
   ChainSigExecuteOptions,
 } from "./types.js";
 import { sendNearTransaction, getNearProvider } from "./near.js";
+import { arePoliciesEqual } from "./policy.js";
 import { actionCreators, createTransaction, encodeTransaction } from "@near-js/transactions";
 import type { Action } from "@near-js/transactions";
 import { PublicKey } from "@near-js/crypto";
@@ -859,6 +860,59 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       functionArgs: { policies },
       options,
     });
+  }
+
+  /**
+   * Sync client policy definitions to the kernel.
+   * Fetches all kernel policies, compares them to client policies, and batches updates for
+   * missing or changed policies.
+   */
+  async syncPolicies({
+    options,
+  }: {
+    options?: NearCallOptions;
+  } = {}): Promise<{ updatedPolicies: Policy[]; result?: KernelCoreProposalResult }> {
+    const totalPolicies = await this.getPolicyCount({ options });
+    const pageSize = 100;
+    const existingPolicies: Array<[string, Policy]> = [];
+
+    for (let fromIndex = 0; fromIndex < totalPolicies; fromIndex += pageSize) {
+      const batch = await this.getAllPolicies({
+        fromIndex,
+        limit: pageSize,
+        options,
+      });
+      existingPolicies.push(...batch);
+      if (batch.length < pageSize) {
+        break;
+      }
+    }
+
+    const existingPolicyMap = new Map(existingPolicies);
+    const updates: Policy[] = [];
+
+    for (const policySpec of Object.values(this.policies)) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { builder: _builder, ...policy } = policySpec as Policy & { builder?: unknown };
+      const existing = existingPolicyMap.get(policy.id);
+      if (!existing || !arePoliciesEqual(policy, existing)) {
+        updates.push(policy as Policy);
+      }
+    }
+
+    if (updates.length === 0) {
+      return { updatedPolicies: [] };
+    }
+
+    //
+    console.log("existing", existingPolicies)
+    console.log("to upsert", updates)
+    console.log("all", this.policies)
+
+
+    // const result = await this.batchUpdatePolicies({ policies: updates, options });
+    const result = undefined;
+    return { updatedPolicies: updates, result};
   }
 
   async storeData({
