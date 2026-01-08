@@ -16,8 +16,8 @@ export {
   getNearProvider,
   parseNearAmount,
   formatNearAmount,
+  tgasToGas,
 } from "./near.js";
-export { tgasToGas } from "./near/gas.js";
 
 // Dew Vault (NEAR) client + helpers
 export {

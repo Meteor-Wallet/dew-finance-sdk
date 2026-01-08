@@ -6,7 +6,7 @@
 import { actionCreators, type Action } from "@near-js/transactions";
 import type { DewClient } from "./client.js";
 import { DEFAULT_POLICY_ACTIVATION_TIME, DEFAULT_POLICY_EXPIRY_NS } from "./policy.js";
-import { tgasToGas } from "./near/gas.js";
+import { tgasToGas } from "./near.js";
 import { buildRestrictionSchema, buildChainSigTransactionPolicy } from "./policy-builders.js";
 import type {
   Asset,

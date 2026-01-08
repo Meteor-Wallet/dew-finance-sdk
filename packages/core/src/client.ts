@@ -8,7 +8,6 @@ import type {
   NearWallet,
   NearTransactionData,
   Proposal,
-  MPCSignature,
   ChainSigTransactionProposalResult,
   ChainSigTransactionExecuteResult,
   NearProposalResult,
@@ -33,9 +32,16 @@ import type {
   ChainSigExecuteOptions,
   ChainSigTransactionAdapter,
 } from "./types.js";
-import { sendNearTransaction, getNearProvider } from "./near.js";
-import { tgasToGas } from "./near/gas.js";
+import { sendNearTransaction, getNearProvider, tgasToGas } from "./near.js";
 import { arePoliciesEqual } from "./policy.js";
+import {
+  extractMPCSignatures,
+  extractMPCSignaturesFromResultValue,
+  extractProposalId,
+  hasReceiptsOutcome,
+  pickEd25519Signature,
+  wasProposalExecuted,
+} from "./utils/proposals.js";
 import {
   actionCreators,
   createTransaction,
@@ -1306,50 +1312,6 @@ function decodeNearUnsignedTxString(encodedTx: string, encoding?: ChainSigEncodi
   return Buffer.from(encodedTx, "base64");
 }
 
-function isEd25519Signature(
-  value: unknown
-): value is Extract<MPCSignature, { scheme: "Ed25519" | "ed25519"; signature: number[] }> {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value as { scheme?: unknown; signature?: unknown };
-  if (!Array.isArray(candidate.signature)) {
-    return false;
-  }
-  if (candidate.signature.some((item) => typeof item !== "number")) {
-    return false;
-  }
-  if (typeof candidate.scheme !== "string") {
-    return false;
-  }
-  return candidate.scheme.toLowerCase() === "ed25519";
-}
-
-function isSecp256k1Signature(
-  value: unknown
-): value is Extract<MPCSignature, { big_r: string; s: string; recovery_id: number }> {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value as { big_r?: unknown; s?: unknown; recovery_id?: unknown };
-  return (
-    candidate.big_r !== undefined &&
-    candidate.s !== undefined &&
-    candidate.recovery_id !== undefined
-  );
-}
-
-function pickEd25519Signature(
-  signatures: MPCSignature[]
-): Extract<MPCSignature, { scheme: "Ed25519" | "ed25519"; signature: number[] }> | null {
-  for (const signature of signatures) {
-    if (isEd25519Signature(signature)) {
-      return signature;
-    }
-  }
-  return null;
-}
-
 function createNearWasmChainSigAdapter({
   provider,
 }: {
@@ -1385,217 +1347,6 @@ function createNearWasmChainSigAdapter({
 
 function isLikelyHex({ value }: { value: string }): boolean {
   return /^[0-9a-fA-F]+$/.test(value) && value.length % 2 === 0;
-}
-
-function hasReceiptsOutcome(outcome: unknown): outcome is FinalExecutionOutcome {
-  if (!outcome || typeof outcome !== "object") {
-    return false;
-  }
-  return Array.isArray((outcome as { receipts_outcome?: unknown }).receipts_outcome);
-}
-
-/**
- * Check if a proposal was executed immediately by inspecting the transaction outcome.
- * Looks for execution events/logs in the receipts.
- */
-function wasProposalExecuted({ outcome }: { outcome: FinalExecutionOutcome }): boolean {
-  if (!hasReceiptsOutcome(outcome)) {
-    return false;
-  }
-  // Check for execution indicators in logs
-  for (const receipt of outcome.receipts_outcome) {
-    const logs = receipt.outcome.logs;
-    for (const log of logs) {
-      const event = parseEventJson({ log });
-      if (event?.event === "proposal_executed") {
-        return true;
-      }
-
-      // Check for MPC signature logs (indicates ChainSig tx was signed/executed)
-      if (log.includes('"big_r"') || log.includes('"signature"')) {
-        return true;
-      }
-    }
-
-    // Check if there's a successful return value with execution data
-    const status = receipt.outcome.status as Record<string, unknown>;
-    if (status && typeof status === "object" && "SuccessValue" in status && status.SuccessValue) {
-      try {
-        const decoded = Buffer.from(status.SuccessValue as string, "base64").toString();
-        // Empty string or null means just proposal created
-        if (decoded && decoded !== "null" && decoded !== '""') {
-          const parsed = JSON.parse(decoded);
-          // If we got structured data back (signatures, results), it executed
-          if (parsed && typeof parsed === "object") {
-            return true;
-          }
-        }
-      } catch {
-        // Continue checking
-      }
-    }
-  }
-
-  return false;
-}
-
-/**
- * Extract proposal ID from transaction outcome.
- * The kernel emits the proposal ID in logs when a proposal is created.
- */
-function extractProposalId({ outcome }: { outcome: FinalExecutionOutcome }): number {
-  if (!hasReceiptsOutcome(outcome)) {
-    throw new Error(
-      "Failed to extract proposal ID: outcome is missing receipts_outcome (result-only response)."
-    );
-  }
-  // Look for proposal_id in logs
-  for (const receipt of outcome.receipts_outcome) {
-    const logs = receipt.outcome.logs;
-    for (const log of logs) {
-      const event = parseEventJson({ log });
-      if (event) {
-        const id = extractProposalIdFromEvent({ event });
-        if (id !== undefined) {
-          return id;
-        }
-      }
-    }
-  }
-
-  throw new Error("Failed to extract proposal ID from kernel logs.");
-}
-
-function parseEventJson({ log }: { log: string }): { event: string; data?: unknown } | null {
-  if (!log.startsWith("EVENT_JSON:")) {
-    return null;
-  }
-  const payload = log.slice("EVENT_JSON:".length);
-  try {
-    const parsed = JSON.parse(payload) as { event?: unknown; data?: unknown };
-    if (parsed && typeof parsed === "object" && typeof parsed.event === "string") {
-      return { event: parsed.event, data: parsed.data };
-    }
-  } catch {
-    // Ignore malformed event logs
-  }
-  return null;
-}
-
-function extractProposalIdFromEvent({
-  event,
-}: {
-  event: { event: string; data?: unknown };
-}): number | undefined {
-  if (!isProposalEvent(event.event)) {
-    return undefined;
-  }
-  // Expected NEP-000 shape: { data: [{ proposal_id: 123, ... }] }
-  if (!Array.isArray(event.data) || event.data.length === 0) {
-    return undefined;
-  }
-  const first = event.data[0];
-  if (!first || typeof first !== "object") {
-    return undefined;
-  }
-  const proposalId = (first as { proposal_id?: unknown }).proposal_id;
-  if (typeof proposalId === "number" && Number.isFinite(proposalId)) {
-    return proposalId;
-  }
-  if (typeof proposalId === "string") {
-    // Digits-only strings are safe to parse as base-10 IDs.
-    if (/^\d+$/.test(proposalId)) {
-      return parseInt(proposalId, 10);
-    }
-  }
-  return undefined;
-}
-
-function isProposalEvent(value: string): boolean {
-  return (
-    value === "proposal_created" || value === "proposal_executed" || value === "proposal_cancelled"
-  );
-}
-
-/**
- * Extract MPC signatures from a NEAR transaction result.
- * Used when a proposal auto-executes and returns chain signatures.
- */
-export function extractMPCSignatures({
-  result,
-}: {
-  result: FinalExecutionOutcome;
-}): MPCSignature[] {
-  const signatures: MPCSignature[] = [];
-
-  const collectSignature = (value: unknown) => {
-    if (isEd25519Signature(value) || isSecp256k1Signature(value)) {
-      signatures.push(value as MPCSignature);
-    }
-  };
-
-  // Scan through all receipts and their outcomes for signature data
-  for (const receipt of result.receipts_outcome) {
-    const logs = receipt.outcome.logs;
-    for (const log of logs) {
-      // Chain signature contract logs signatures in a specific format
-      // Look for signature data in logs
-      try {
-        if (
-          log.includes('"big_r"') ||
-          log.includes("big_r") ||
-          log.includes('"Ed25519"') ||
-          log.includes('"ed25519"') ||
-          log.includes('"signature"')
-        ) {
-          const parsed = JSON.parse(log);
-          collectSignature(parsed);
-        }
-      } catch {
-        // Not JSON or not a signature log, continue
-      }
-    }
-
-    // Also check the return value if available
-    const returnValue = receipt.outcome.status as Record<string, unknown>;
-    if (returnValue && typeof returnValue === "object" && "SuccessValue" in returnValue) {
-      try {
-        const decoded = Buffer.from(returnValue.SuccessValue as string, "base64").toString();
-        const parsed = JSON.parse(decoded);
-        // Handle both single signature and array of signatures
-        if (Array.isArray(parsed)) {
-          for (const sig of parsed) {
-            collectSignature(sig);
-          }
-        } else {
-          collectSignature(parsed);
-        }
-      } catch {
-        // Not valid signature data
-      }
-    }
-  }
-
-  return signatures;
-}
-
-function extractMPCSignaturesFromResultValue(value: unknown): MPCSignature[] {
-  const signatures: MPCSignature[] = [];
-  const collectSignature = (candidate: unknown) => {
-    if (isEd25519Signature(candidate) || isSecp256k1Signature(candidate)) {
-      signatures.push(candidate as MPCSignature);
-    }
-  };
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      collectSignature(item);
-    }
-  } else if (value) {
-    collectSignature(value);
-  }
-
-  return signatures;
 }
 
 /**

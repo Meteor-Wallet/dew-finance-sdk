@@ -93,3 +93,11 @@ export function formatNearAmount({
 }): string {
   return formatNearAmountRaw(amount, decimals);
 }
+
+/**
+ * Convert TGas to gas units.
+ */
+export function tgasToGas(tgas: number): bigint {
+  const TGAS_TO_GAS = 1_000_000_000_000n;
+  return BigInt(Math.floor(tgas * Number(TGAS_TO_GAS)));
+}

@@ -21,7 +21,7 @@ import type {
   PolicyRestriction,
 } from "../types.js";
 import { DEFAULT_POLICY_ACTIVATION_TIME, DEFAULT_POLICY_EXPIRY_NS } from "../policy.js";
-import { tgasToGas } from "../near/gas.js";
+import { tgasToGas } from "../near.js";
 import { waitUntil } from "./wait.js";
 
 const DEFAULT_INTENTS_ACCOUNT = "intents.near";
