@@ -513,12 +513,17 @@ export type ChainSigResponse =
       recovery_id: number;
     };
 
-/** MPC signature from chain signature contract */
-export interface MPCSignature {
-  big_r: string;
-  s: string;
-  recovery_id: number;
-}
+/** MPC signature from chain signature contract (Secp256k1 or Ed25519 for NearWasm). */
+export type MPCSignature =
+  | {
+      big_r: string;
+      s: string;
+      recovery_id: number;
+    }
+  | {
+      scheme: "Ed25519" | "ed25519";
+      signature: number[];
+    };
 
 /** Adapter interface for finalizing and broadcasting ChainSig transactions */
 export interface ChainSigTransactionAdapter<UnsignedTx = unknown, SignedTx = string> {

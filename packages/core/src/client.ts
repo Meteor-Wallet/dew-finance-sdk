@@ -31,12 +31,20 @@ import type {
   ChainSigEncoding,
   ChainSigProposeOptions,
   ChainSigExecuteOptions,
+  ChainSigTransactionAdapter,
 } from "./types.js";
 import { sendNearTransaction, getNearProvider } from "./near.js";
 import { arePoliciesEqual } from "./policy.js";
-import { actionCreators, createTransaction, encodeTransaction } from "@near-js/transactions";
+import {
+  actionCreators,
+  createTransaction,
+  encodeTransaction,
+  Signature,
+  SignedTransaction,
+  Transaction,
+} from "@near-js/transactions";
 import type { Action } from "@near-js/transactions";
-import { PublicKey } from "@near-js/crypto";
+import { KeyType, PublicKey } from "@near-js/crypto";
 import { baseDecode } from "@near-js/utils";
 import type { JsonRpcProvider } from "@near-js/providers";
 import type { FinalExecutionOutcome } from "@near-js/types";
@@ -119,6 +127,11 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       throw new Error(`Policy ${String(id)} not found in client policies.`);
     }
 
+    console.info("[DewClient] execute: start", {
+      policyId: String(id),
+      policyType: policy.policy_type,
+    });
+
     const declaredBuilder = policy.builder;
     if (!declaredBuilder) {
       throw new Error(`Policy ${String(id)} does not define a builder for execute().`);
@@ -127,8 +140,10 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     let payload: PolicyExecutionPayload | undefined;
 
     if ("args" in params && params.args !== undefined) {
+      console.info("[DewClient] execute: building payload with args");
       payload = declaredBuilder(...params.args) as PolicyExecutionPayload;
     } else if ("prebuilt" in params) {
+      console.info("[DewClient] execute: building payload (prebuilt)");
       payload = declaredBuilder() as PolicyExecutionPayload;
     }
 
@@ -137,14 +152,20 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     }
 
     const buildParams = isNearTransactionBuildParams(payload) ? payload : undefined;
+    if (buildParams) {
+      console.info("[DewClient] execute: payload provides Near transaction build params");
+    }
 
     switch (policy.policy_type) {
       case "ChainSigTransaction": {
         let encodedTx: string | Uint8Array;
+        let builtTx: NearTransactionBuildResult | undefined;
         if (buildParams) {
-          const built = await this.buildNearTransaction(buildParams);
-          encodedTx = built.encodedTx;
+          console.info("[DewClient] execute: building Near transaction for ChainSig");
+          builtTx = await this.buildNearTransaction(buildParams);
+          encodedTx = builtTx.encodedTx;
         } else if (typeof payload === "string" || payload instanceof Uint8Array) {
+          console.info("[DewClient] execute: using pre-encoded ChainSig transaction payload");
           encodedTx = payload;
         } else {
           throw new Error(
@@ -158,8 +179,9 @@ export class DewClient<TPolicies extends PolicySpecMap> {
             : "ChainSigTransaction" in policy.policy_details
               ? policy.policy_details.ChainSigTransaction
               : undefined;
+        const chainEnvironment = chainSigDetails?.chain_environment;
         const defaultEncoding: ChainSigEncoding | undefined =
-          chainSigDetails?.chain_environment === "NearWasm" ? "base64" : undefined;
+          chainEnvironment === "NearWasm" ? "base64" : undefined;
         const resolvedOptions =
           defaultEncoding && !chainSigOptions?.encoding
             ? { ...chainSigOptions, encoding: defaultEncoding }
@@ -168,35 +190,79 @@ export class DewClient<TPolicies extends PolicySpecMap> {
           ? (({ chainSig: _chainSig, ...rest }) => rest)(resolvedOptions)
           : undefined;
 
+        console.info("[DewClient] execute: proposing ChainSig transaction", {
+          encoding: resolvedOptions?.encoding ?? defaultEncoding,
+        });
         const proposal = await this.proposeChainSigTransaction({
           policyId: String(id),
           encodedTx,
           options: proposeOptions,
         });
 
-        if (!proposal.executed || !chainSigOptions?.chainSig) {
+        console.info("[DewClient] execute: proposal result", {
+          executed: proposal.executed,
+          proposalId: proposal.proposalId,
+          signatures: proposal.executed ? proposal.signatures.length : 0,
+        });
+        if (!proposal.executed) {
           return proposal;
         }
 
-        const { adapter, unsignedTx, broadcast } = chainSigOptions.chainSig;
-        const signedTx = adapter.finalizeTransactionSigning({
-          transaction: unsignedTx,
+        const shouldDefaultNearBroadcast = chainEnvironment === "NearWasm";
+        const broadcastDisabled = chainSigOptions?.chainSig?.broadcast === false;
+        const defaultNearAdapter = shouldDefaultNearBroadcast
+          ? createNearWasmChainSigAdapter({
+              provider: this.resolveNearProvider({ options: chainSigOptions }),
+            })
+          : undefined;
+        const adapter = chainSigOptions?.chainSig?.adapter ?? defaultNearAdapter;
+
+        if (!adapter) {
+          console.warn(
+            "[DewClient] ChainSig proposal executed but no adapter is available for broadcasting."
+          );
+          return proposal;
+        }
+
+        const unsignedTx =
+          chainSigOptions?.chainSig?.unsignedTx ??
+          builtTx?.transaction ??
+          (shouldDefaultNearBroadcast
+            ? decodeNearUnsignedTx(encodedTx, resolvedOptions?.encoding)
+            : undefined);
+
+        if (!unsignedTx) {
+          console.warn(
+            "[DewClient] ChainSig proposal executed but unsigned transaction is missing."
+          );
+          return proposal;
+        }
+
+        console.info("[DewClient] execute: finalizing ChainSig transaction signatures");
+        const resolvedAdapter = adapter as ChainSigTransactionAdapter<unknown, string>;
+        const signedTx = resolvedAdapter.finalizeTransactionSigning({
+          transaction: unsignedTx as unknown,
           signatures: proposal.signatures,
         });
 
-        if (broadcast === false) {
+        if (broadcastDisabled) {
+          console.info("[DewClient] ChainSig broadcast disabled; returning signed tx only.");
           return { ...proposal, signedTx };
         }
 
-        const broadcastTxHash = await adapter.broadcastTx(signedTx);
+        console.info("[DewClient] Broadcasting ChainSig transaction...");
+        const broadcastTxHash = await resolvedAdapter.broadcastTx(signedTx);
+        console.info("[DewClient] ChainSig broadcast complete:", broadcastTxHash);
         return { ...proposal, signedTx, broadcastTxHash };
       }
       case "NearNativeTransaction": {
         let encodedTx: string | Uint8Array;
         if (buildParams) {
+          console.info("[DewClient] execute: building Near transaction for NearNative");
           const built = await this.buildNearTransaction(buildParams);
           encodedTx = built.encodedTx;
         } else if (typeof payload === "string" || payload instanceof Uint8Array) {
+          console.info("[DewClient] execute: using pre-encoded NearNative transaction payload");
           encodedTx = payload;
         } else {
           throw new Error(
@@ -204,6 +270,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
           );
         }
         const normalizedTx = normalizeNearEncodedTx(encodedTx as NearNativeExecutionPayload);
+        console.info("[DewClient] execute: proposing NearNative transaction");
         return this.proposeExecution({
           policyId: String(id),
           functionArgs: normalizedTx,
@@ -223,6 +290,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
             `Policy ${String(id)} expects function args (object or string) for KernelConfiguration.`
           );
         }
+        console.info("[DewClient] execute: proposing KernelConfiguration update");
         return this.proposeExecution({
           policyId: String(id),
           functionArgs: payload as Record<string, unknown> | string,
@@ -1160,6 +1228,108 @@ function normalizeChainSigEncodedTx({
   return encodedTx;
 }
 
+// Decode an encoded NEAR transaction (base64 or hex string / bytes) into a Transaction.
+function decodeNearUnsignedTx(
+  encodedTx: string | Uint8Array,
+  encoding?: ChainSigEncoding
+): Transaction {
+  const bytes =
+    encodedTx instanceof Uint8Array ? encodedTx : decodeNearUnsignedTxString(encodedTx, encoding);
+  return Transaction.decode(bytes);
+}
+
+function decodeNearUnsignedTxString(encodedTx: string, encoding?: ChainSigEncoding): Uint8Array {
+  if (encoding === "hex") {
+    const normalized = encodedTx.startsWith("0x") ? encodedTx.slice(2) : encodedTx;
+    return Buffer.from(normalized, "hex");
+  }
+  if (encoding === "base64") {
+    return Buffer.from(encodedTx, "base64");
+  }
+  const normalized = encodedTx.startsWith("0x") ? encodedTx.slice(2) : encodedTx;
+  if (encodedTx.startsWith("0x") || isLikelyHex({ value: encodedTx })) {
+    return Buffer.from(normalized, "hex");
+  }
+  return Buffer.from(encodedTx, "base64");
+}
+
+function isEd25519Signature(
+  value: unknown
+): value is Extract<MPCSignature, { scheme: "Ed25519" | "ed25519"; signature: number[] }> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as { scheme?: unknown; signature?: unknown };
+  if (!Array.isArray(candidate.signature)) {
+    return false;
+  }
+  if (candidate.signature.some((item) => typeof item !== "number")) {
+    return false;
+  }
+  if (typeof candidate.scheme !== "string") {
+    return false;
+  }
+  return candidate.scheme.toLowerCase() === "ed25519";
+}
+
+function isSecp256k1Signature(
+  value: unknown
+): value is Extract<MPCSignature, { big_r: string; s: string; recovery_id: number }> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as { big_r?: unknown; s?: unknown; recovery_id?: unknown };
+  return (
+    candidate.big_r !== undefined &&
+    candidate.s !== undefined &&
+    candidate.recovery_id !== undefined
+  );
+}
+
+function pickEd25519Signature(
+  signatures: MPCSignature[]
+): Extract<MPCSignature, { scheme: "Ed25519" | "ed25519"; signature: number[] }> | null {
+  for (const signature of signatures) {
+    if (isEd25519Signature(signature)) {
+      return signature;
+    }
+  }
+  return null;
+}
+
+function createNearWasmChainSigAdapter({
+  provider,
+}: {
+  provider: JsonRpcProvider;
+}): ChainSigTransactionAdapter<Transaction, string> {
+  return {
+    finalizeTransactionSigning({ transaction, signatures }) {
+      const signature = pickEd25519Signature(signatures);
+      if (!signature) {
+        throw new Error("No Ed25519 signature found for NearWasm ChainSig transaction.");
+      }
+
+      const signedTx = new SignedTransaction({
+        transaction,
+        signature: new Signature({
+          keyType: KeyType.ED25519,
+          data: Uint8Array.from(signature.signature),
+        }),
+      });
+
+      return Buffer.from(signedTx.encode()).toString("base64");
+    },
+    async broadcastTx(signedTx) {
+      const { broadcastNearTransaction } = await import("./utils/broadcast.js");
+      const outcome = await broadcastNearTransaction({
+        rpcUrlOrProvider: provider,
+        signedTx,
+      });
+      return outcome.transaction.hash;
+    },
+  };
+}
+
 function isLikelyHex({ value }: { value: string }): boolean {
   return /^[0-9a-fA-F]+$/.test(value) && value.length % 2 === 0;
 }
@@ -1290,6 +1460,12 @@ export function extractMPCSignatures({
 }): MPCSignature[] {
   const signatures: MPCSignature[] = [];
 
+  const collectSignature = (value: unknown) => {
+    if (isEd25519Signature(value) || isSecp256k1Signature(value)) {
+      signatures.push(value as MPCSignature);
+    }
+  };
+
   // Scan through all receipts and their outcomes for signature data
   for (const receipt of result.receipts_outcome) {
     const logs = receipt.outcome.logs;
@@ -1297,11 +1473,15 @@ export function extractMPCSignatures({
       // Chain signature contract logs signatures in a specific format
       // Look for signature data in logs
       try {
-        if (log.includes('"big_r"') || log.includes("big_r")) {
+        if (
+          log.includes('"big_r"') ||
+          log.includes("big_r") ||
+          log.includes('"Ed25519"') ||
+          log.includes('"ed25519"') ||
+          log.includes('"signature"')
+        ) {
           const parsed = JSON.parse(log);
-          if (parsed.big_r && parsed.s !== undefined && parsed.recovery_id !== undefined) {
-            signatures.push(parsed as MPCSignature);
-          }
+          collectSignature(parsed);
         }
       } catch {
         // Not JSON or not a signature log, continue
@@ -1317,12 +1497,10 @@ export function extractMPCSignatures({
         // Handle both single signature and array of signatures
         if (Array.isArray(parsed)) {
           for (const sig of parsed) {
-            if (sig.big_r && sig.s !== undefined && sig.recovery_id !== undefined) {
-              signatures.push(sig as MPCSignature);
-            }
+            collectSignature(sig);
           }
-        } else if (parsed.big_r && parsed.s !== undefined && parsed.recovery_id !== undefined) {
-          signatures.push(parsed as MPCSignature);
+        } else {
+          collectSignature(parsed);
         }
       } catch {
         // Not valid signature data
