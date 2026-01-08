@@ -11,7 +11,6 @@ if (!seed) {
   throw new Error(`Missing seed phrases. Set ${requiredSeeds.join("/")} in .env.`);
 }
 
-const NETWORK_ID = "testnet";
 const RPC_URL = "https://rpc.testnet.near.org";
 const CHAIN_SIG_DERIVATION_PATH = process.env.CHAIN_SIG_DERIVATION_PATH;
 const DEFAULT_DERIVATION_PATH = CHAIN_SIG_DERIVATION_PATH ?? "fizz";
@@ -23,7 +22,6 @@ if (!accountId || !privateKey) {
 
 const wallet: NearWallet = await createNearAccount({
   rpcUrl: RPC_URL,
-  networkId: NETWORK_ID,
   accountId,
   privateKey,
 });

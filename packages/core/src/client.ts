@@ -34,6 +34,7 @@ import type {
   ChainSigTransactionAdapter,
 } from "./types.js";
 import { sendNearTransaction, getNearProvider } from "./near.js";
+import { tgasToGas } from "./near/gas.js";
 import { arePoliciesEqual } from "./policy.js";
 import {
   actionCreators,
@@ -49,7 +50,6 @@ import { baseDecode } from "@near-js/utils";
 import type { JsonRpcProvider } from "@near-js/providers";
 import type { FinalExecutionOutcome } from "@near-js/types";
 
-const TGAS_TO_GAS = 1_000_000_000_000; // 1e12
 const DEFAULT_GAS_TGAS = 150; // sensible default
 const DEFAULT_DEPOSIT_YOCTO = "0";
 
@@ -423,8 +423,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     args: Record<string, unknown>;
     options?: NearCallOptions;
   }): Promise<FinalExecutionOutcome> {
-    const gasNumber = (options?.gasTgas ?? DEFAULT_GAS_TGAS) * TGAS_TO_GAS;
-    const gas = BigInt(Math.floor(gasNumber));
+    const gas = tgasToGas(options?.gasTgas ?? DEFAULT_GAS_TGAS);
     const depositStr = options?.depositYocto ?? DEFAULT_DEPOSIT_YOCTO;
     const deposit = BigInt(depositStr);
     if (options?.agent) {
@@ -541,6 +540,17 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     options?: NearCallOptions;
   }): Promise<KernelCoreProposalResult> {
     const outcome = await this.proposeExecution({ policyId: method, functionArgs, options });
+    if (!hasReceiptsOutcome(outcome)) {
+      console.warn(
+        `[DewClient] ${method}: received result-only response; falling back to view-based proposal resolution.`
+      );
+      const proposalId = await this.getLatestProposalId({ options });
+      const proposal = await this.getProposal({ proposalId, options });
+      if (!proposal) {
+        return { executed: true, proposalId };
+      }
+      return { executed: false, proposalId, proposal };
+    }
     const executed = wasProposalExecuted({ outcome });
     const proposalId = extractProposalId({ outcome });
     if (executed) {
@@ -584,6 +594,16 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       options,
     });
 
+    if (!hasReceiptsOutcome(outcome)) {
+      console.warn(
+        `[DewClient] proposeNearActions(${policyId}): received result-only response; falling back to view-based proposal resolution.`
+      );
+      const proposalId = await this.getLatestProposalId({ options });
+      const proposal = await this.getProposal({ proposalId, options });
+      const executed = !proposal;
+      return { executed, proposalId, outcome: outcome as FinalExecutionOutcome };
+    }
+
     const executed = wasProposalExecuted({ outcome });
     const proposalId = extractProposalId({ outcome });
 
@@ -612,6 +632,25 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       options,
     });
 
+    if (!hasReceiptsOutcome(outcome)) {
+      console.warn(
+        `[DewClient] proposeChainSigTransaction(${policyId}): received result-only response; falling back to view-based proposal resolution.`
+      );
+      const proposalId = await this.getLatestProposalId({ options });
+      const proposal = await this.getProposal({ proposalId, options });
+      const signatures = extractMPCSignaturesFromResultValue(outcome);
+      const executed = !proposal || signatures.length > 0;
+      if (executed) {
+        return {
+          executed: true,
+          proposalId,
+          signatures,
+          outcome: outcome as FinalExecutionOutcome,
+        };
+      }
+      return { executed: false, proposalId, outcome: outcome as FinalExecutionOutcome };
+    }
+
     const executed = wasProposalExecuted({ outcome });
     const proposalId = extractProposalId({ outcome });
 
@@ -634,6 +673,20 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       args: { proposal_id: proposalId },
       options,
     });
+    if (!hasReceiptsOutcome(outcome)) {
+      console.warn(
+        `[DewClient] voteOnProposal(${proposalId}): received result-only response; falling back to view-based proposal resolution.`
+      );
+      const signatures = extractMPCSignaturesFromResultValue(outcome);
+      if (signatures.length) {
+        return { executed: true, proposalId, signatures };
+      }
+      const proposal = await this.getProposal({ proposalId, options });
+      if (!proposal) {
+        return { executed: true, proposalId };
+      }
+      return { executed: false, proposalId, proposal };
+    }
     const executed = wasProposalExecuted({ outcome });
     if (executed) {
       const signatures = extractMPCSignatures({ result: outcome });
@@ -1334,11 +1387,21 @@ function isLikelyHex({ value }: { value: string }): boolean {
   return /^[0-9a-fA-F]+$/.test(value) && value.length % 2 === 0;
 }
 
+function hasReceiptsOutcome(outcome: unknown): outcome is FinalExecutionOutcome {
+  if (!outcome || typeof outcome !== "object") {
+    return false;
+  }
+  return Array.isArray((outcome as { receipts_outcome?: unknown }).receipts_outcome);
+}
+
 /**
  * Check if a proposal was executed immediately by inspecting the transaction outcome.
  * Looks for execution events/logs in the receipts.
  */
 function wasProposalExecuted({ outcome }: { outcome: FinalExecutionOutcome }): boolean {
+  if (!hasReceiptsOutcome(outcome)) {
+    return false;
+  }
   // Check for execution indicators in logs
   for (const receipt of outcome.receipts_outcome) {
     const logs = receipt.outcome.logs;
@@ -1381,6 +1444,11 @@ function wasProposalExecuted({ outcome }: { outcome: FinalExecutionOutcome }): b
  * The kernel emits the proposal ID in logs when a proposal is created.
  */
 function extractProposalId({ outcome }: { outcome: FinalExecutionOutcome }): number {
+  if (!hasReceiptsOutcome(outcome)) {
+    throw new Error(
+      "Failed to extract proposal ID: outcome is missing receipts_outcome (result-only response)."
+    );
+  }
   // Look for proposal_id in logs
   for (const receipt of outcome.receipts_outcome) {
     const logs = receipt.outcome.logs;
@@ -1506,6 +1574,25 @@ export function extractMPCSignatures({
         // Not valid signature data
       }
     }
+  }
+
+  return signatures;
+}
+
+function extractMPCSignaturesFromResultValue(value: unknown): MPCSignature[] {
+  const signatures: MPCSignature[] = [];
+  const collectSignature = (candidate: unknown) => {
+    if (isEd25519Signature(candidate) || isSecp256k1Signature(candidate)) {
+      signatures.push(candidate as MPCSignature);
+    }
+  };
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectSignature(item);
+    }
+  } else if (value) {
+    collectSignature(value);
   }
 
   return signatures;

@@ -41,17 +41,15 @@ export async function sendNearTransaction({
 
 /**
  * Create a NEAR account from private key
- * @param config - Connection config with rpc URL, network ID, account ID, and private key
+ * @param config - Connection config with rpc URL, account ID, and private key
  * @returns Connected Account instance
  */
 export async function createNearAccount({
   rpcUrl,
-  networkId: _networkId,
   accountId,
   privateKey,
 }: {
   rpcUrl: string;
-  networkId: string;
   accountId: string;
   privateKey: string;
 }): Promise<Account> {

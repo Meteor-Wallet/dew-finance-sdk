@@ -21,9 +21,9 @@ import type {
   PolicyRestriction,
 } from "../types.js";
 import { DEFAULT_POLICY_ACTIVATION_TIME, DEFAULT_POLICY_EXPIRY_NS } from "../policy.js";
+import { tgasToGas } from "../near/gas.js";
 import { waitUntil } from "./wait.js";
 
-const TGAS_TO_GAS = 1_000_000_000_000n;
 const DEFAULT_INTENTS_ACCOUNT = "intents.near";
 const ONE_YOCTO = "1";
 const DEFAULT_SOLVER_RPC = "https://solver-relay-v2.chaindefuser.com/rpc";
@@ -571,10 +571,6 @@ function toAmount({ value }: { value: Bigish }): string {
   return new Big(value).toString();
 }
 
-function tgasToGas({ tgas }: { tgas: number }): bigint {
-  return BigInt(Math.floor(tgas * Number(TGAS_TO_GAS)));
-}
-
 function buildFunctionCall({
   method,
   args,
@@ -586,7 +582,7 @@ function buildFunctionCall({
   gasTgas: number;
   depositYocto: string;
 }): Action {
-  const gas = tgasToGas({ tgas: gasTgas });
+  const gas = tgasToGas(gasTgas);
   const deposit = BigInt(depositYocto);
   return actionCreators.functionCall(method, Buffer.from(JSON.stringify(args)), gas, deposit);
 }

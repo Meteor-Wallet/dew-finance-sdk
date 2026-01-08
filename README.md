@@ -34,13 +34,15 @@ It also includes helpers for intents-based bridging and common polling patterns.
 ## Current scope
 
 - Core kernel methods (propose, vote, query)
+- `DewClient.execute` for builder-driven execution (NearNative/ChainSig), with optional ChainSig broadcast via adapters
 - Proposal helpers for ChainSig policies and signature extraction
 - Broadcast utilities for signed NEAR and ChainSig transactions
 - Auto-execute detection for proposals
-- NEAR intents bridging helpers
-- NEAR intents swapping helpers
+- NEAR intents bridging helpers (deposit/withdraw) plus bridge deposit address lookup
+- NEAR intents swapping helpers (quote + ChainSigMessage signing/publish)
 - NEAR intents policy builders (ft deposit/withdraw, ERC-20 transfer, swap signing)
 - Dew Vault (NEAR) client: propose helpers, policy builders (ChainSigTransaction), and full getter suite
+- CLI for NEAR contract deployment (`dew deploy`)
 
 Policy typing:
 
@@ -53,7 +55,7 @@ Policy typing:
 ## Roadmap
 
 - Dew Vault (EVM) support
-- CLI tools for deploying kernels and vaults
+- Expand CLI with kernel/vault management commands
 - Pre-made policies for kernel configuration
 - Shade Agent templates
 
@@ -61,6 +63,7 @@ Policy typing:
 
 - `@dew-finance/core`: DewClient, DewNearVaultClient, core types, and NEAR/ChainSig utilities (broadcasting, intents, policy builders, polling).
 - `@dew-finance/protocols`: Protocol adapters and helpers (Burrow views/actions/policies, Ref Finance swap quotes, Burrow math utilities).
+- `@dew-finance/cli`: Internal CLI (`dew`) with NEAR contract deploy + optional account creation/init.
 
 ## Protocol adapters
 

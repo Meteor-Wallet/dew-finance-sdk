@@ -1,7 +1,7 @@
 import { actionCreators, type Action } from "@near-js/transactions";
+import { tgasToGas } from "@dew-finance/core";
 import { DEFAULT_BURROW_CONTRACT_ID } from "./constants.js";
 
-const TGAS_TO_GAS = 1_000_000_000_000n;
 const DEFAULT_EXECUTE_GAS_TGAS = 300;
 const DEFAULT_FT_TRANSFER_GAS_TGAS = 300;
 const DEFAULT_ONE_YOCTO = "1";
@@ -17,10 +17,6 @@ type ActionOptions = {
 type FtTransferOptions = ActionOptions & {
   burrowId?: string;
 };
-
-function toGas(gasTgas: number): bigint {
-  return BigInt(Math.floor(gasTgas)) * TGAS_TO_GAS;
-}
 
 function toAmount(amount: AmountInput): string {
   if (typeof amount === "bigint") {
@@ -43,7 +39,7 @@ function buildFunctionCall({
   return actionCreators.functionCall(
     method,
     Buffer.from(JSON.stringify(args)),
-    toGas(gasTgas),
+    tgasToGas(gasTgas),
     BigInt(depositYocto)
   );
 }
