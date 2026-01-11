@@ -360,7 +360,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
   }
 
   /**
-   * Broadcast a signed NEAR transaction.
+   * Broadcast a signed NEAR transaction (waits for FINAL execution).
    * Use this after manually signing a transaction (e.g., via hardware wallet or offline signing).
    *
    * @param signedTx - Base64-encoded signed transaction

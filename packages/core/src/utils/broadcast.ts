@@ -10,7 +10,7 @@ import { createPublicClient, http } from "viem";
 import type { Hex, PublicClient } from "viem";
 
 /**
- * Broadcast a signed NEAR transaction to the network
+ * Broadcast a signed NEAR transaction to the network (waits for FINAL execution)
  *
  * @param rpcUrlOrProvider - NEAR RPC endpoint or provider
  * @param signedTx - Signed transaction (base64 string or Uint8Array)
@@ -31,7 +31,7 @@ export async function broadcastNearTransaction({
   const txBytes = typeof signedTx === "string" ? Buffer.from(signedTx, "base64") : signedTx;
 
   const signedTransaction = SignedTransaction.decode(txBytes);
-  return provider.sendTransaction(signedTransaction) as Promise<FinalExecutionOutcome>;
+  return provider.sendTransactionUntil(signedTransaction, "FINAL") as Promise<FinalExecutionOutcome>;
 }
 
 /**
