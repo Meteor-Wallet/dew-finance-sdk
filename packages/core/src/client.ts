@@ -146,10 +146,8 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     let payload: PolicyExecutionPayload | undefined;
 
     if ("args" in params && params.args !== undefined) {
-      console.info("[DewClient] execute: building payload with args");
       payload = declaredBuilder(...params.args) as PolicyExecutionPayload;
     } else if ("prebuilt" in params) {
-      console.info("[DewClient] execute: building payload (prebuilt)");
       payload = declaredBuilder() as PolicyExecutionPayload;
     }
 
@@ -158,16 +156,12 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     }
 
     const buildParams = isNearTransactionBuildParams(payload) ? payload : undefined;
-    if (buildParams) {
-      console.info("[DewClient] execute: payload provides Near transaction build params");
-    }
 
     switch (policy.policy_type) {
       case "ChainSigTransaction": {
         let encodedTx: string | Uint8Array;
         let builtTx: NearTransactionBuildResult | undefined;
         if (buildParams) {
-          console.info("[DewClient] execute: building Near transaction for ChainSig");
           builtTx = await this.buildNearTransaction(buildParams);
           encodedTx = builtTx.encodedTx;
         } else if (typeof payload === "string" || payload instanceof Uint8Array) {
@@ -196,9 +190,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
           ? (({ chainSig: _chainSig, ...rest }) => rest)(resolvedOptions)
           : undefined;
 
-        console.info("[DewClient] execute: proposing ChainSig transaction", {
-          encoding: resolvedOptions?.encoding ?? defaultEncoding,
-        });
+        console.info("[DewClient] execute: proposing ChainSig transaction");
         const proposal = await this.proposeChainSigTransaction({
           policyId: String(id),
           encodedTx,
@@ -244,7 +236,6 @@ export class DewClient<TPolicies extends PolicySpecMap> {
           return proposal;
         }
 
-        console.info("[DewClient] execute: finalizing ChainSig transaction signatures");
         const resolvedAdapter = adapter as ChainSigTransactionAdapter<unknown, string>;
         const signedTx = resolvedAdapter.finalizeTransactionSigning({
           transaction: unsignedTx as unknown,
@@ -552,9 +543,6 @@ export class DewClient<TPolicies extends PolicySpecMap> {
   }): Promise<KernelCoreProposalResult> {
     const outcome = await this.proposeExecution({ policyId: method, functionArgs, options });
     if (!hasReceiptsOutcome(outcome)) {
-      console.warn(
-        `[DewClient] ${method}: received result-only response; falling back to view-based proposal resolution.`
-      );
       const proposalId = await this.getLatestProposalId({ options });
       const proposal = await this.getProposal({ proposalId, options });
       if (!proposal) {
@@ -606,9 +594,6 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     });
 
     if (!hasReceiptsOutcome(outcome)) {
-      console.warn(
-        `[DewClient] proposeNearActions(${policyId}): received result-only response; falling back to view-based proposal resolution.`
-      );
       const proposalId = await this.getLatestProposalId({ options });
       const proposal = await this.getProposal({ proposalId, options });
       const executed = !proposal;
@@ -644,9 +629,7 @@ export class DewClient<TPolicies extends PolicySpecMap> {
     });
 
     if (!hasReceiptsOutcome(outcome)) {
-      console.warn(
-        `[DewClient] proposeChainSigTransaction(${policyId}): received result-only response; falling back to view-based proposal resolution.`
-      );
+
       const proposalId = await this.getLatestProposalId({ options });
       const proposal = await this.getProposal({ proposalId, options });
       const signatures = extractMPCSignaturesFromResultValue(outcome);
@@ -685,9 +668,6 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       options,
     });
     if (!hasReceiptsOutcome(outcome)) {
-      console.warn(
-        `[DewClient] voteOnProposal(${proposalId}): received result-only response; falling back to view-based proposal resolution.`
-      );
       const signatures = extractMPCSignaturesFromResultValue(outcome);
       if (signatures.length) {
         return { executed: true, proposalId, signatures };
