@@ -3,7 +3,11 @@
  * @packageDocumentation
  */
 
-import type { ChainSigTransactionAdapter, MPCSignature } from "../types.js";
+import type {
+  ChainSigBroadcastResult,
+  ChainSigTransactionAdapter,
+  MPCSignature,
+} from "../types.js";
 
 export function finalizeTransactionSigning<UnsignedTx, SignedTx>({
   adapter,
@@ -23,6 +27,6 @@ export async function broadcastTx<SignedTx>({
 }: {
   adapter: ChainSigTransactionAdapter<unknown, SignedTx>;
   signedTx: SignedTx;
-}): Promise<string> {
+}): Promise<ChainSigBroadcastResult> {
   return adapter.broadcastTx(signedTx);
 }

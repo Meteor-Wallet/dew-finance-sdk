@@ -257,9 +257,14 @@ export class DewClient<TPolicies extends PolicySpecMap> {
         }
 
         console.info("[DewClient] Broadcasting ChainSig transaction...");
-        const broadcastTxHash = await resolvedAdapter.broadcastTx(signedTx);
-        console.info("[DewClient] ChainSig broadcast complete:", broadcastTxHash);
-        return { ...proposal, signedTx, broadcastTxHash };
+        const broadcastResult = await resolvedAdapter.broadcastTx(signedTx);
+        console.info("[DewClient] ChainSig broadcast complete:", broadcastResult.txHash);
+        return {
+          ...proposal,
+          signedTx,
+          broadcastTxHash: broadcastResult.txHash,
+          broadcastOutcome: broadcastResult.outcome,
+        };
       }
       case "NearNativeTransaction": {
         let encodedTx: string | Uint8Array;
@@ -1340,7 +1345,7 @@ function createNearWasmChainSigAdapter({
         rpcUrlOrProvider: provider,
         signedTx,
       });
-      return outcome.transaction.hash;
+      return { txHash: outcome.transaction.hash, outcome };
     },
   };
 }

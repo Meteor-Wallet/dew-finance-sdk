@@ -526,14 +526,21 @@ export type MPCSignature =
     };
 
 /** Adapter interface for finalizing and broadcasting ChainSig transactions */
+export type ChainSigBroadcastResult = {
+  /** Transaction hash on the target chain */
+  txHash: string;
+  /** Optional final execution outcome (NEAR only) */
+  outcome?: FinalExecutionOutcome;
+};
+
 export interface ChainSigTransactionAdapter<UnsignedTx = unknown, SignedTx = string> {
   /** Attach MPC signatures to an unsigned transaction */
   finalizeTransactionSigning(params: {
     transaction: UnsignedTx;
     signatures: MPCSignature[];
   }): SignedTx;
-  /** Broadcast a signed transaction to the target chain */
-  broadcastTx(signedTx: SignedTx): Promise<string>;
+  /** Broadcast a signed transaction to the target chain (returns hash and optional outcome) */
+  broadcastTx(signedTx: SignedTx): Promise<ChainSigBroadcastResult>;
 }
 
 // =============================================================================
@@ -554,6 +561,7 @@ export type ChainSigTransactionExecuteResult<SignedTx = string> =
   ChainSigTransactionProposalResult & {
     signedTx?: SignedTx;
     broadcastTxHash?: string;
+    broadcastOutcome?: FinalExecutionOutcome;
   };
 
 /** Result from proposing NEAR actions */

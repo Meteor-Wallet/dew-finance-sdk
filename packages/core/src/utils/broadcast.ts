@@ -31,7 +31,12 @@ export async function broadcastNearTransaction({
   const txBytes = typeof signedTx === "string" ? Buffer.from(signedTx, "base64") : signedTx;
 
   const signedTransaction = SignedTransaction.decode(txBytes);
-  return provider.sendTransactionUntil(signedTransaction, "FINAL") as Promise<FinalExecutionOutcome>;
+  const outcome = (await provider.sendTransactionUntil(
+    signedTransaction,
+    "FINAL"
+  )) as FinalExecutionOutcome;
+  assertNoFailedReceipts({ outcome });
+  return outcome;
 }
 
 /**
@@ -56,4 +61,51 @@ export async function broadcastEvmTransaction({
   return client.sendRawTransaction({
     serializedTransaction: signedTx,
   });
+}
+
+function assertNoFailedReceipts({ outcome }: { outcome: FinalExecutionOutcome }): void {
+  const topStatus = (outcome as { transaction_outcome?: { outcome?: { status?: unknown } } })
+    .transaction_outcome?.outcome?.status;
+  const topFailure = extractFailure(topStatus);
+  if (topFailure) {
+    throw new Error(`[NEAR] Transaction failed: ${formatFailure(topFailure)}`);
+  }
+
+  if (!Array.isArray(outcome.receipts_outcome)) {
+    return;
+  }
+  for (const receipt of outcome.receipts_outcome) {
+    const status = (receipt as { outcome?: { status?: unknown } }).outcome?.status;
+    const failure = extractFailure(status);
+    if (failure) {
+      const receiptId =
+        (receipt as { id?: string }).id ?? (receipt as { receipt_id?: string }).receipt_id;
+      const suffix = receiptId ? ` (${receiptId})` : "";
+      throw new Error(`[NEAR] Receipt failed${suffix}: ${formatFailure(failure)}`);
+    }
+  }
+}
+
+function extractFailure(status: unknown): unknown | null {
+  if (!status || typeof status !== "object") {
+    return null;
+  }
+  if ("Failure" in status) {
+    return (status as { Failure?: unknown }).Failure ?? "Failure";
+  }
+  if ("Unknown" in status) {
+    return (status as { Unknown?: unknown }).Unknown ?? "Unknown";
+  }
+  return null;
+}
+
+function formatFailure(failure: unknown): string {
+  if (typeof failure === "string") {
+    return failure;
+  }
+  try {
+    return JSON.stringify(failure);
+  } catch {
+    return String(failure);
+  }
 }
