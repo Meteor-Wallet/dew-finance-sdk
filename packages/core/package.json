@@ -1,6 +1,6 @@
 {
   "name": "@dew-finance/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Core client and types for Dew Finance SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,6 +14,10 @@
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
     }
+  },
+  "repository": {
+    "url": "https://github.com/Meteor-Wallet/dew-finance-sdk.git",
+    "type": "git"
   },
   "scripts": {
     "build": "tsc",
@@ -45,5 +49,8 @@
   "files": [
     "dist"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
 }
