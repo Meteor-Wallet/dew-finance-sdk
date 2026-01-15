@@ -19,4 +19,6 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
       - run: bun install --frozen-lockfile
       - run: bun run build
-      - run: bun publish packages/core
+      - name: publish to npm
+        working-directory: packages/core
+        run: bun publish
