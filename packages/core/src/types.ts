@@ -493,6 +493,9 @@ export const POLICY_IDS: string[] = [
   "batch_update_policies",
   "store_data",
   "batch_store_data",
+  "upload_contract",
+  "delete_uploaded_contract",
+  "deploy_uploaded_contract",
 ];
 
 // =============================================================================
