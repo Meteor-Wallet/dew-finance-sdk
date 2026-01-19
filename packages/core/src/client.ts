@@ -55,6 +55,7 @@ import { KeyType, PublicKey } from "@near-js/crypto";
 import { baseDecode } from "@near-js/utils";
 import type { JsonRpcProvider } from "@near-js/providers";
 import type { FinalExecutionOutcome } from "@near-js/types";
+import { retry } from "./utils/retry.js";
 
 const DEFAULT_GAS_TGAS = 150; // sensible default
 const DEFAULT_DEPOSIT_YOCTO = "0";
@@ -622,11 +623,15 @@ export class DewClient<TPolicies extends PolicySpecMap> {
       encodedTx,
       encoding: options?.encoding,
     });
-    const outcome = await this.callKernel({
-      method: "propose_execution",
-      args: { policy_id: policyId, function_args: txData },
-      options,
-    });
+
+    const outcome = await retry(async () => {
+      const result = await this.callKernel({
+        method: "propose_execution",
+        args: { policy_id: policyId, function_args: txData },
+        options,
+      });
+      return result
+    })
 
     if (!hasReceiptsOutcome(outcome)) {
 
