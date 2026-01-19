@@ -80,7 +80,7 @@ export const DEW_VAULT_METHODS = [
   "dew_vault_start_vault",
   "dew_vault_transfer_ownership",
   "dew_vault_set_code_hash",
-  "dew_vault_delete_uploaded_contract",
+  "dew_vault_delete_code_hash",
   "dew_vault_deploy_uploaded_contract",
 ] as const;
 
