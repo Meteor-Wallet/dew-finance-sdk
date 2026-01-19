@@ -1,6 +1,6 @@
 {
   "name": "@dew-finance/protocols",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Protocol adapters and helpers for Dew Finance SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -35,7 +35,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@dew-finance/core": "workspace:*",
+    "@dew-finance/core": "^0.1.3",
     "big.js": "^7.0.1",
     "@near-js/providers": "^2.0.1",
     "@near-js/transactions": "^2.0.1"
