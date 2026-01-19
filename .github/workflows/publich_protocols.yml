@@ -1,0 +1,25 @@
+name: Publish to npmjs
+on:
+  push:
+    tags:
+      - release/protocols/*
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: publish protocols to npm
+        working-directory: packages/protocols
+        run: npm publish
