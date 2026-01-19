@@ -23,5 +23,5 @@ jobs:
         working-directory: packages/core
         run: npm publish
       - name: publish protocol to npm
-        working-directory: packages/protocol
+        working-directory: packages/protocols
         run: npm publish
